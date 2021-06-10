@@ -14,6 +14,7 @@ import datetime
 project_name = 'Dev_LARGE'
 path_video = Path('/mnt/Data/Data/Small Experiment/LARGE/2021-04-22 11-47-11.mkv')
 path_label = Path('/mnt/Data/Data/Small Experiment/LARGE/2021-04-22 11-47-11.mkv_data.csv')
+
 path_export = Path.joinpath(Path.home(),'VCF/butter/dataset')
 
 starttime = datetime.datetime.now()
@@ -45,25 +46,4 @@ pool.close()
 # Save location file
 np.savetxt(str(Path.joinpath(path_export,'{:s}_label.csv'.format(str(path_export)))),csv_data[labeledData,:-1], delimiter='\t')
 
-
 print('ExtractLabeledFrameDataset.py : Elapsed time : {:.5f} DONE'.format((datetime.datetime.now() - starttime).total_seconds()))
-
-
-
-
-#
-#
-#
-#
-#
-# fig = plt.figure(1)
-# ax = fig.subplots(1,1)
-# ax.imshow(frame)
-# ax.scatter(csv_data[labeledData[0],0], frameSize[0]-csv_data[labeledData[0],1])
-# # remember that array structure and image sturcture has inverse y-axis = row
-#
-
-
-
-
-
