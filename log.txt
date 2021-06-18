@@ -1,0 +1,21 @@
+# Main Goal
+Find the position and the head direction of the animal
+
+Using the pre-trained networks such as ResNet
+
+# Method 1 : crunch raw image data into the network 
+## Problems
+- pre-trained networks has relatively small input image size
+- although we can resize the image into this size, but the animal in the apparatus is too small
+- and re plotting the predicted location from the small resized image is non-sense!
+- ===> suspend the further experiment
+
+# Method 2 : make an small ROI patch of the image 
+## 
+
+
+
+# Simple Note
+Conv2DTranspose : Transposed convolution layer (deconvolution)
+    
+
