@@ -169,7 +169,7 @@ for idx in idx_list[:10]:
     plt.pause(1)
 
 ################################################################
-# Test with New Images 
+# Test with New Images (Loop)
 ################################################################
 idx_list = 5000 + np.random.permutation(5000)
 for idx in idx_list[:30]:
@@ -183,3 +183,16 @@ for idx in idx_list[:30]:
     r = 20
     plt.plot([result[0,1], result[0,3]], [result[0,0], result[0,2]], lineWidth=3, color = 'r')
     plt.pause(1)
+
+################################################################
+# Test with New Image
+################################################################
+FRAME_NUMBER = 11480
+chosen_image, coor = istream.extractROIImage(FRAME_NUMBER, drawPlot=True)
+testing = np.expand_dims(chosen_image,0) / 255
+result = new_model.predict(testing)
+plt.clf()
+plt.imshow(chosen_image/255)
+plt.scatter(result[0,1], result[0,0])
+r = 20
+plt.plot([result[0,1], result[0,3]], [result[0,0], result[0,2]], lineWidth=3, color = 'r')
