@@ -7,8 +7,7 @@ from sklearn.model_selection import train_test_split
 import cv2 as cv
 import matplotlib.pyplot as plt
 from pathlib import Path
-from helper_function import ROI_image_stream
-from helper_function import checkDataSet
+from ROI_image_stream import ROI_image_stream
 
 # Tensorflow version test
 if tf.__version__ < '2.5.0':
@@ -26,7 +25,7 @@ tf.config.experimental.set_memory_growth(gpu[0], True)
 ################################################################
 # Constants
 ################################################################
-path_dataset = Path.home() / 'VCF/butter/dataset'
+path_dataset = Path.home() / '/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21JAN5/#21JAN5-210629-183643'
 path_csv = next(path_dataset.glob('*.csv'))
 base_network = 'mobilenet'
 
@@ -58,8 +57,9 @@ dataSize = y_raw.shape[0]
 X = np.zeros((4 * dataSize,base_network_inputsize,base_network_inputsize,3))
 y = np.zeros((4 * dataSize,4))
 
-istream = ROI_image_stream(path_dataset,ROI_size=base_network_inputsize)
-istream.trainBackgroundSubtractor()
+istream = ROI_image_stream(path_dataset,ROI_size=base_network_inputsize, )
+istream.threshold = 70
+istream.trainBackgroundSubtractor(stride=500)
 
 for i, frame_number in enumerate(labeledIndex):
     chosen_image, coor = istream.extractROIImage(frame_number)

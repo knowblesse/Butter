@@ -8,14 +8,13 @@ import numpy as np
 import cv2 as cv
 import matplotlib.pyplot as plt
 from pathlib import Path
-from helper_function import ROI_image_stream
+from ROI_image_stream import ROI_image_stream
 
 ################################################################
 # Constants
 ################################################################
-path_dataset = Path.home() / 'VCF/butter/dataset/Ex1/0422_02_Valium_0.2/'
+path_dataset = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21JAN5/#21JAN5-210629-183643')
 base_network = 'mobilenet'
-
 
 ################################################################
 # Setup
@@ -31,7 +30,7 @@ istream = ROI_image_stream(path_dataset,ROI_size=base_network_inputsize)
 istream.trainBackgroundSubtractor(stride=1000)
 
 
-DEBUG_FRAME = 1060
+DEBUG_FRAME = 4385
 
 istream.vid.set(cv.CAP_PROP_POS_FRAMES,DEBUG_FRAME)
 ret, image = istream.vid.read()
@@ -40,56 +39,58 @@ image = cv.threshold(image, 80, 0, cv.THRESH_TOZERO)[1]
 masked_image = istream.backSub.apply(image,learningRate = 1e-6) # according to the document, 0 should freeze the backgroundsubtractor, but it fails. So we put very small number
 image = cv.copyMakeBorder(image, istream.half_ROI_size, istream.half_ROI_size, istream.half_ROI_size, istream.half_ROI_size, cv.BORDER_CONSTANT, value=[0, 0, 0])
 
+def dilate(image, size):
+    size = int(size)
+    element = cv.getStructuringElement(cv.MORPH_ELLIPSE, (size,size),((int((size-1)/2), int((size-1)/2))))
+    return cv.dilate(image, element)
 
-dilate_size=2
-erosion_size=4
+def erode(image, size):
+    size = int(size)
+    element = cv.getStructuringElement(cv.MORPH_ELLIPSE, (size,size),((int((size-1)/2), int((size-1)/2))))
+    return cv.erode(image, element)
 
-#masked_image = cv.floodFill(masked_image, seedPoint=(0,0))
+fig = plt.figure(1)
+fig.clf()
+ax = fig.subplots(2,2)
+ax[0,0].imshow(masked_image)
 
-# 1. Dilate
-dilate_shape = cv.MORPH_RECT
-element_dlt = cv.getStructuringElement(dilate_shape, (2*dilate_size+1,2*dilate_size+1),(dilate_size, dilate_size))
-masked_image_dlt = cv.dilate(masked_image, element_dlt)
+ax[0,1].cla()
+ax[0,1].imshow(erode(masked_image,3))
 
+ax[1,1].cla()
+ax[1,1].imshow(erode(masked_image,3))
 
-# 2. Erode :
-erosion_shape = cv.MORPH_RECT
-element_erd = cv.getStructuringElement(erosion_shape, (2*erosion_size+1,2*erosion_size+1),(erosion_size, erosion_size))
-masked_image_dlt_erd = cv.erode(masked_image_dlt,element_erd)
+ax[1,0].cla()
+ax[1,0].imshow(dilate(erode(masked_image,3),4))
+
+ax[1,1].cla()
+ax[1,1].imshow(dilate(erode(dilate(erode(masked_image,3),4),8),6))
+
+# BlobDetector
+denoised_mask = dilate(erode(dilate(erode(masked_image,3),4),8),6)
 
 parameter = cv.SimpleBlobDetector_Params()
 parameter.filterByArea = True
 parameter.filterByConvexity = True
+parameter.filterByCircularity = True
 parameter.filterByInertia = False
 parameter.filterByColor = False
 parameter.minArea = 500  # this value defines the minimum size of the blob
 parameter.maxArea = 10000  # this value defines the maximum size of the blob
 parameter.minDistBetweenBlobs = 1
-parameter.minConvexity = 0.2
-
+parameter.minConvexity = 0.3
+parameter.minCircularity = 0.3
 
 detector = cv.SimpleBlobDetector_create(parameter)
-detected_blob = detector.detect(masked_image_dlt_erd)
+detected_blob = detector.detect(denoised_mask)
 print(len(detected_blob))
-
-
-fig = plt.figure(1)
-fig.clf()
-ax = fig.subplots(2, 2)
-ax[0,0].imshow(image)
-ax[0,0].set_title('Original')
-ax[0,1].imshow(masked_image)
-ax[0,1].set_title('Masked_image')
-ax[1,0].imshow(masked_image_dlt)
-ax[1,0].set_title('Dilate')
-ax[1,1].imshow(masked_image_dlt_erd)
-ax[1,1].set_title('Dilate + Erode')
-
 
 max_blob_index = 0
 if len(detected_blob) > 1:# if multiple blob is detected, select the largest one
     max_blob_size = 0
     for i, blob in enumerate(detected_blob):
+        print(blob.size)
+        print(blob.pt)
         if max_blob_size < blob.size:
             max_blob_size = blob.size
             max_blob_index = i
