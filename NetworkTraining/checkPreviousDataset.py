@@ -2,7 +2,9 @@
 checkPreviousDataset.py
 @Knowblesse 2021
 21 AUG 26
-check previous Dataset and return dataset index to begin
+Function used for appending dataset for network training.
+Check the integrity of the previous dataset and return dataset with index for new data
+If user intentionally delete some pictures, then corresponding data in .csv file is erased and all dataset is rearranged.
 - Output
     - dataset_csv : loaded dataset csv
     - dataset_number : dataset index to begin

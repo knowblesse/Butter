@@ -2,10 +2,21 @@
 Goes well with Lobster
 
 # File Lists
-**ExtractLabeledFrameDataset** : extract labeled frames from the video and save the image
-**Detection.py** : Process a new video file with pretrained neural net
-**helper_function.py** : checkDataset & ROI_image_stream
+
+## root
+
+**ProcessVideo.py** : Process a new video file with pretrained neural net
+
 **istream_test.py** : testing script for parameter optimization
-**Pretraining_test.py** : 
+
+## Network Training
+
+**/NetworkTraining/checkPreviousDataset** : Dataset integrity checking function used for appending dataset for network training
+
+**/NetworkTraining/GenerateTrainingDataset** : Extract ROI image data from labeled video and merge to the dataset
+
+**/NetworkTraining/TrainNetwork** : TrainNetwork with current dataset
+
+**/NetworkTraining/UpdateVerificationImage** : Using the dataset, generated marked images for verification purpose
 
 
