@@ -24,7 +24,7 @@ from checkPreviousDataset import checkPreviousDataset
 ################################################################
 # Constants
 ################################################################
-new_data_folder = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21JAN5/#21JAN5-210629-183643')#Path.home() / 'VCF/butter/dataset'
+new_data_folder = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21JAN5/#21JAN5-210622-180202')#Path.home() / 'VCF/butter/dataset'
 base_network = 'mobilenet'
 istream_threshold = 70
 ################################################################
@@ -64,7 +64,7 @@ istream.trainBackgroundSubtractor(stride=500)
 
 new_data_in_roi = np.zeros((len(labeledIndex), 3))
 for i, frame_number in enumerate(labeledIndex):
-    chosen_image, coor = istream.extractROIImage(frame_number)
+    chosen_image, coor = istream.getROIImage(frame_number)
     cv.imwrite(str(Path(f'./Dataset/Dataset_{dataset_number + i:04d}.png')),chosen_image)
     new_data_in_roi[i,0:2] = new_data_csv[i,0:2] - coor + base_network_inputsize / 2
     new_data_in_roi[i,2] = new_data_csv[i,2]
