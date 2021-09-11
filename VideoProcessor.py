@@ -115,10 +115,36 @@ class VideoProcessor:
                 self.output_data[i,:] = [idx, -1, -1, -1]
         self.isProcessed = True
 
-    def save(self, path=Path('.')):
+    def save(self, save_path=''):
+        """
+        save processed data
+        --------------------------------------------------------------------------------
+        save_path : pathlib.PosixPath object : save path. if nothing is provided, save next to target video
+        """
         if not self.isProcessed:
             raise (BaseException('VideoProcessor : run the processor first!'))
-        np.savetxt(str((path / (self.istream.path_video.stem + '_butter_output.csv')).absolute()),self.output_data,'%d',delimiter='\t')
+        if save_path == '':
+            save_path = self.video_path
+
+        if save_path.is_dir():
+            if sorted(save_path.glob('*.mkv')):
+                video_path = next(save_path.glob('*.mkv'))
+            elif sorted(save_path.glob('*.avi')):
+                video_path = next(save_path.glob('*.avi'))
+            else:
+                raise(BaseException('VideoProcessor : Save path must be a file not directory'))
+            txt_save_path = video_path / (video_path.stem + '_buttered.csv')
+        elif save_path.is_file():
+            if save_path.suffix == '.csv':
+                txt_save_path = save_path
+            elif save_path.suffix == '.avi' or save_path.suffix == '.mkv':
+                txt_save_path = save_path.parent / (save_path.stem + '_buttered.csv')
+            else:
+                raise(BaseException('VideoProcessor : Save path must end with .csv'))
+        else:
+            raise (BaseException('VideoProcessor : Unknown path'))
+
+        np.savetxt(str(txt_save_path.absolute()),self.output_data,'%d',delimiter='\t')
 
     def checkResult(self, num_frame_to_check = 10):
         if not self.isProcessed:
