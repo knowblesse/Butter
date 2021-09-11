@@ -62,10 +62,10 @@ if dataSize != len(dataset_image):
 # Data augmentation
 for i, clip in enumerate(dataset_image):
     chosen_image = cv.imread(str(clip))
-    X[i * 4 + 0, :, :, :] = chosen_image / 255
-    X[i * 4 + 1, :, :, :] = cv.flip(chosen_image, 0) / 255 # updown (row)
-    X[i * 4 + 2, :, :, :] = cv.flip(chosen_image, 1) / 255 # leftright (col)
-    X[i * 4 + 3, :, :, :] = cv.flip(chosen_image, -1) / 255 # both
+    X[i * 4 + 0, :, :, :] = chosen_image
+    X[i * 4 + 1, :, :, :] = cv.flip(chosen_image, 0)# updown (row)
+    X[i * 4 + 2, :, :, :] = cv.flip(chosen_image, 1)# leftright (col)
+    X[i * 4 + 3, :, :, :] = cv.flip(chosen_image, -1)# both
 
     corr = y_raw[i, 0:2]
     y[i * 4 + 0, 0:2] = corr
@@ -88,8 +88,6 @@ for i, clip in enumerate(dataset_image):
             y[i * 4 + 3, 0] - r*np.sin(np.deg2rad(y_raw[i,2])),
             y[i * 4 + 3, 1] - r*np.cos(np.deg2rad(y_raw[i,2]))]
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
-
 #################################################################
 # Check loaded Dataset
 #################################################################
@@ -97,11 +95,16 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
 idx = np.random.randint(dataSize*4)
 
 plt.clf()
-plt.imshow(X[idx,:,:,:])
+plt.imshow(X[idx,:,:,:]/255)
 plt.scatter(y[idx,1], y[idx,0])
 
 r = 30
 plt.plot([y[idx,1], y[idx,3]], [y[idx,0], y[idx,2]], LineWidth=3, color = 'r')
+
+#################################################################
+# Convert Dataset
+#################################################################
+X_conv = keras.applications.mobilenet_v2.preprocess_input(X)
 
 ################################################################
 # Build Model - Base model
@@ -141,33 +144,14 @@ FC = keras.layers.Dense(4, activation='linear',name='FC_3')(FC)
 # Compile and Train
 ################################################################
 new_model = Model(inputs=base_model.input, outputs=FC)
-new_model.compile(optimizer=keras.optimizers.SGD(learning_rate=1e-6, momentum=0.05), loss='mae', metrics='mae')
+new_model.compile(optimizer=keras.optimizers.SGD(learning_rate=5e-7, momentum=0.07), loss='mae', metrics='mae')
 #new_model.compile(optimizer=keras.optimizers.Adagrad(learning_rate=1e-4, initial_accumulator_value=0.2), loss='mae', metrics='mae')
 start_time = time.time()
-save_interval = 100
-total_epoch = 3000
+save_interval = 300
+total_epoch = 6000
 for i in np.arange(int(total_epoch/save_interval)):
-    new_model.fit(X_train,y_train,epochs=int(save_interval*(i+1)),initial_epoch=int(save_interval*i), validation_split=0.1,batch_size=20)
+    new_model.fit(X_conv,y,epochs=int(save_interval*(i+1)),initial_epoch=int(save_interval*i), validation_split=0.1,batch_size=10)
     print('Saving...')
     new_model.save(model_save_path)
     print(f'Saved until {save_interval*(i+1):d} epochs')
 print('Elapsed time : ' + str(datetime.timedelta(seconds=time.time() - start_time)))
-
-################################################################
-# Test with testset images
-################################################################
-y_pred = new_model.predict(X_test)
-idx_list = np.random.permutation(y_test.shape[0])
-for idx in idx_list[:10]:
-    plt.clf()
-    plt.imshow(X_test[idx,:,:,:])
-    # draw predicted
-    r = 40
-    plt.scatter(y_pred[idx,1], y_pred[idx,0],c='r')
-    plt.plot([y_pred[idx,1], y_pred[idx,3]], [y_pred[idx,0], y_pred[idx,2]],lineWidth=3, color = 'r')
-    # draw real
-    plt.scatter(y_test[idx,1], y_test[idx,0],c='g')
-    plt.plot([y_test[idx,1], y_test[idx,3]], [y_test[idx,0], y_test[idx,2]], lineWidth=3, color = 'g')
-    # print output
-    plt.pause(1)
-
