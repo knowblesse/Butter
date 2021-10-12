@@ -8,7 +8,7 @@ from queue import Queue
 import time
 
 class ROI_image_stream():
-    def __init__(self,path_data, ROI_size, threshold=80):
+    def __init__(self,path_data, ROI_size, threshold=50):
         """
         __init__ : initialize ROI image extraction stream object
         """
@@ -25,7 +25,7 @@ class ROI_image_stream():
             self.path_video = next(self.path_data.glob('*.avi'))
             print('ROI_image_stream : found *.avi')
         else:
-            print('ROI_image_stream : Can not find video file in %s', self.path_data)
+            print(f'ROI_image_stream : Can not find video file in {self.path_data}')
         # stream status 
         self.isBackgroundSubtractorTrained = False
         self.threshold = threshold
@@ -57,13 +57,11 @@ class ROI_image_stream():
         self.backSub.setShadowValue(0)
         if start_empty:
             for i in np.arange(self.vid.get(cv.CAP_PROP_FPS)):
-                self.vid.set(cv.CAP_PROP_POS_FRAMES, i)
-                ret, image = self.vid.read()
+                image = self.getFrame(i)
                 self.backSub.apply(cv.threshold(image, self.threshold, 0, cv.THRESH_TOZERO)[1], learningRate=0.2)
         print('ROI_image_stream : Start Background training')
         for frame in tqdm(np.arange(0, self.num_frame, stride)):
-            self.vid.set(cv.CAP_PROP_POS_FRAMES, frame)
-            ret, image = self.vid.read()
+            image = self.getFrame(frame)
             if image is None:
                 break
             else:
@@ -81,6 +79,9 @@ class ROI_image_stream():
         """
         self.vid.set(cv.CAP_PROP_POS_FRAMES, frame_number)
         ret, image = self.vid.read()
+        #image correction can be applied. but this slows the process a lot.
+        #image = np.clip(((self.alpha * image + self.beta) / 255) ** self.gamma * 255, 0, 255).astype(np.uint8)
+
         if not ret:
             raise(BaseException(f'ROI_image_stream : Can not retrieve frame # {frame_number}'))
         return image
@@ -130,12 +131,11 @@ class ROI_image_stream():
         while True:
             if not self.frameQ.full():
                 frame_number = self.frame_number_array[self.frame_number_array_idx]
-                self.vid.set(cv.CAP_PROP_POS_FRAMES, frame_number)
-                ret, image = self.vid.read()
-                self.frameQ.put((frame_number, ret, image))
+                image = self.getFrame(frame_number)
+                self.frameQ.put((frame_number, image))
                 self.frame_number_array_idx += 1
             else:
-                time.sleep(0.5)
+                time.sleep(0.2)
             if self.frame_number_array_idx >= self.frame_number_array.shape[0]:
                 break
         print('ROI_image_stream : Video IO Thread stopped')
@@ -148,11 +148,11 @@ class ROI_image_stream():
         # run until frameQ is empty and thread is dead 
         while not(self.frameQ.empty()) or self.vidIOthread.isAlive():
             if not self.blobQ.full():
-                frame_number, ret, image = self.frameQ.get()
+                frame_number, image = self.frameQ.get()
                 detected_blob = self.__findBlob(image)
                 self.blobQ.put((frame_number, image, detected_blob))
             else:
-                time.sleep(0.5)
+                time.sleep(0.2)
 
     def __findBlob(self, image):
         """
@@ -229,8 +229,7 @@ class ROI_image_stream():
             raise(BaseException('BackgroundSubtractor is not trained'))
 
         if frame_number != -1: # frame_number is provided
-            self.vid.set(cv.CAP_PROP_POS_FRAMES, frame_number)
-            ret, image = self.vid.read() # the part of "image" will be returned and "masked_image" is used to center of ROI detection
+            image = self.getFrame(frame_number)
             detected_blob = self.__findBlob(image)
 
         else: # frame number is not provided
@@ -242,7 +241,7 @@ class ROI_image_stream():
         # Further process detected blobs
         if len(detected_blob) == 0 :
             self.noBlob += 1
-            raise(BlobDetectionFailureError(f'ROI_image_stream : No blob is detected from frame {frame_number}. {self.noBlob}'))
+            raise(BlobDetectionFailureError('No Blob'))
         elif len(detected_blob) > 1:# if multiple blob is detected, select the largest one
             self.multipleBlobs += 1
             final_blob_index = 0

@@ -52,7 +52,6 @@ class VideoProcessor:
 
         # Train ROI_image_stream
         self.istream = ROI_image_stream(video_path, ROI_size=self.ROI_size)
-        self.istream.trainBackgroundSubtractor(stride=500)
 
         # Print Video Info
         self.process_fps = process_fps
@@ -60,6 +59,9 @@ class VideoProcessor:
         self.fps = self.istream.vid.get(cv.CAP_PROP_FPS)
         time_sec = self.num_frame / self.fps
         print(f"VideoProcessor : Video Info : {self.num_frame:05d}frames : {int(np.floor(time_sec/60)):d} m {int(np.remainder(time_sec,60)):d} s")
+
+    def trainBackgroundSubtractor(self, stride=1000):
+        self.istream.trainBackgroundSubtractor(stride)
 
     def checkStartPosition(self):
         """
@@ -133,7 +135,7 @@ class VideoProcessor:
                 video_path = next(save_path.glob('*.avi'))
             else:
                 raise(BaseException('VideoProcessor : Save path must be a file not directory'))
-            txt_save_path = video_path / (video_path.stem + '_buttered.csv')
+            txt_save_path = video_path.parent / (video_path.stem + '_buttered.csv')
         elif save_path.is_file():
             if save_path.suffix == '.csv':
                 txt_save_path = save_path
