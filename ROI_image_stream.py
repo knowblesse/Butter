@@ -8,65 +8,137 @@ from queue import Queue
 import time
 
 class ROI_image_stream():
-    def __init__(self,path_data, ROI_size, threshold=50):
+    def __init__(self,path_data, ROI_size, setMask=True, stableBackground=False):
         """
         __init__ : initialize ROI image extraction stream object
+        ****************************************************************
+        path_data : Path object : path of the video or a folder containing the video
+        ROI_size : size of the extracting ROI. This must be a even number.
+        setMask : if True, ROI selection screen appears.
+        stableBackground : if True, only the median image is used as the background.
         """
         # Parameter
-        self.path_data = path_data
-        if self.path_data.suffix == '.mkv': # path is video.mkv
-            self.path_video = self.path_data
-        elif self.path_data.suffix == '.avi': # path is video.avi
-            self.path_video = self.path_data
-        elif sorted(self.path_data.glob('*.mkv')): # path contains video.mkv
-            self.path_video = next(self.path_data.glob('*.mkv'))
+        if path_data.suffix == '.mkv': # path is video.mkv
+            self.path_video = path_data
+        elif path_data.suffix == '.avi': # path is video.avi
+            self.path_video = path_data
+        elif sorted(path_data.glob('*.mkv')): # path contains video.mkv
+            # TODO: if there are multiple video files, raise the error
+            self.path_video = next(path_data.glob('*.mkv'))
             print('ROI_image_stream : found *.mkv')
-        elif sorted(self.path_data.glob('*.avi')): # path contains video.avi
-            self.path_video = next(self.path_data.glob('*.avi'))
+        elif sorted(path_data.glob('*.avi')): # path contains video.avi
+            self.path_video = next(path_data.glob('*.avi'))
             print('ROI_image_stream : found *.avi')
         else:
-            print(f'ROI_image_stream : Can not find video file in {self.path_data}')
+            raise(BaseException(f'ROI_image_stream : Can not find video file in {path_data}'))
+
         # stream status 
         self.isBackgroundSubtractorTrained = False
-        self.threshold = threshold
         self.isMultithreading = False
 
         # setup VideoCapture
         self.vid = cv.VideoCapture(str(self.path_video))
         self.num_frame = self.vid.get(cv.CAP_PROP_FRAME_COUNT)
+        self.frame_size = (int(self.vid.get(cv.CAP_PROP_FRAME_HEIGHT)), int(self.vid.get(cv.CAP_PROP_FRAME_WIDTH)))
         
         # ROI size
         self.ROI_size = ROI_size
         self.half_ROI_size = int(np.round(self.ROI_size/2))
         if ROI_size%2 != 0 :
             raise(BaseException('ROI_size is not dividable with 2!'))
+
+        # Background Subtractor Parameters
+        self.masked_image = []
+        self.backSub_lr = 0
+        self.stableBackground = stableBackground
+
         # TODO Delete
         self.multipleBlobs = 0
         self.noBlob = 0
 
-    def trainBackgroundSubtractor(self, stride=2000, start_empty=False):
+        # BlobDetector
+        parameter = cv.SimpleBlobDetector_Params()
+        parameter.filterByArea = True
+        parameter.filterByConvexity = True
+        parameter.filterByCircularity = True
+        parameter.filterByInertia = False
+        parameter.filterByColor = False
+        parameter.minArea = 500  # this value defines the minimum size of the blob
+        parameter.maxArea = 10000  # this value defines the maximum size of the blob
+        parameter.minDistBetweenBlobs = 1
+        parameter.minConvexity = 0.3
+        parameter.minCircularity = 0.3
+        parameter.minThreshold = 253
+        parameter.maxThreshold = 255
+        parameter.thresholdStep = 1
+        self.detector = cv.SimpleBlobDetector_create(parameter)
+
+        # soft detector
+        parameter.minConvexity = 0.15
+        parameter.minCircularity = 0.15
+
+        self.detector_soft = cv.SimpleBlobDetector_create(parameter)
+
+        # Set Mask
+        if setMask:
+            mask_position = cv.selectROI('Select ROI', self.getFrame(0))
+            cv.destroyWindow('Select ROI')
+            self.global_mask = np.zeros(self.frame_size, dtype=np.uint8)
+            self.global_mask[mask_position[1]:mask_position[1]+mask_position[3], mask_position[0]:mask_position[0]+mask_position[2]] = 255
+        else:
+            self.global_mask = 255 * np.ones(self.frame_size, dtype=np.uint8)
+
+    def trainBackgroundSubtractor(self):
         """
-        trainBackgroundSubtractor : train BackgroundSubtractorKNN
-        ---------------------------------------------------------------- 
-        stride : int : frame stride for training. large number is faster, but inaccurate.
-        start_empty : bool : is animal present from the beginning of the video. 
-            True uses high learning rate for initial 1 sec video.
+        trainBackgroundSubtractor : train BackgroundSubtractorKNN for initial movement detection
         """
-        self.backSub = cv.createBackgroundSubtractorKNN()
-        self.backSub.setShadowThreshold(0.01)
-        self.backSub.setShadowValue(0)
-        if start_empty:
-            for i in np.arange(self.vid.get(cv.CAP_PROP_FPS)):
-                image = self.getFrame(i)
-                self.backSub.apply(cv.threshold(image, self.threshold, 0, cv.THRESH_TOZERO)[1], learningRate=0.2)
-        print('ROI_image_stream : Start Background training')
-        for frame in tqdm(np.arange(0, self.num_frame, stride)):
+        self.backSub = cv.createBackgroundSubtractorMOG2()
+        self.backSub.setNMixtures(3) #default : 5 : 30
+        self.backSub.setHistory(20) # default : 500 : 100
+        self.backSub.setVarThreshold(50) # default : 16 : 50
+
+        self.backSub.setDetectShadows(False)
+
+        numModelFrame = 200
+
+        storeFrame = np.zeros((self.frame_size[0], self.frame_size[1], 3, numModelFrame), dtype=np.uint8)
+
+        stride = np.ceil(self.num_frame / numModelFrame) # use 200 frames to build the background model
+
+        print('ROI_image_stream : Frame analysis...')
+        for i, frame in enumerate(tqdm(np.arange(self.num_frame-1, 0, -1 * stride))): # obtain image backward
             image = self.getFrame(frame)
             if image is None:
                 break
             else:
-                self.backSub.apply(cv.threshold(image, self.threshold, 0, cv.THRESH_TOZERO)[1], learningRate=0.05)
-        print('ROI_image_stream : Background training Complete')
+                image = cv.bitwise_and(image, image, mask=self.global_mask)
+                storeFrame[:,:,:,i] = image
+
+        print('ROI_image_stream : Foreground Model building...')
+        #imageMedian = np.median(storeFrame,axis=3).astype(np.uint8)
+        imageMedian = np.quantile(storeFrame, 0.2, axis=3).astype(np.uint8)
+        self.imageMedian = imageMedian
+        animalFrame = np.zeros((self.frame_size[0], self.frame_size[1], numModelFrame), dtype=np.uint8)
+        animalSize = np.zeros(numModelFrame)
+        for i in tqdm(np.arange(numModelFrame)):
+            animalFrame[:,:,i] = cv.cvtColor(cv.subtract(storeFrame[:,:,:,i], imageMedian),cv.COLOR_RGB2GRAY)
+
+        # Calculate Threshold value
+        self.threshold = np.mean(animalFrame) + 2 * np.std(animalFrame) # 2 sigma over background as threshold
+
+        for i in np.arange(numModelFrame):
+            animalSize[i] = np.sum(animalFrame[:,:,i] > self.threshold)
+
+        self.animalSize = np.mean(animalSize)
+
+        print('ROI_image_stream : Training Backgroundsubtractor...')
+        self.backSub.apply(imageMedian,learningRate=1)
+        if not self.stableBackground:
+            for i in np.arange(numModelFrame):
+                self.backSub.apply(storeFrame[:,:,:,i], learningRate=0.01)
+
+        print('ROI_image_stream : Done')
+
         self.isBackgroundSubtractorTrained = True
 
     def getFrame(self, frame_number):
@@ -127,7 +199,7 @@ class ROI_image_stream():
         """
         __readVideo : multithreading. read video, extract frame listed in self.frame_number_array and store in self.frameQ
         """
-        print('ROI_image_stream : Video IO Thread started')
+        print('ROI_image_stream : Video IO Thread started\n')
         while True:
             if not self.frameQ.full():
                 frame_number = self.frame_number_array[self.frame_number_array_idx]
@@ -135,16 +207,16 @@ class ROI_image_stream():
                 self.frameQ.put((frame_number, image))
                 self.frame_number_array_idx += 1
             else:
-                time.sleep(0.2)
+                time.sleep(0.1)
             if self.frame_number_array_idx >= self.frame_number_array.shape[0]:
                 break
-        print('ROI_image_stream : Video IO Thread stopped')
+        print('ROI_image_stream : Video IO Thread stopped\n')
 
     def __processFrames(self):
         """
         __processFrames : multithreading. extract ROI from frame stored in self.frameQ and store in self.blobQ
         """
-        print('ROI_image_stram : ROI extraction Thread started')
+        print('ROI_image_stream : ROI extraction Thread started\n')
         # run until frameQ is empty and thread is dead 
         while not(self.frameQ.empty()) or self.vidIOthread.isAlive():
             if not self.blobQ.full():
@@ -152,8 +224,13 @@ class ROI_image_stream():
                 detected_blob = self.__findBlob(image)
                 self.blobQ.put((frame_number, image, detected_blob))
             else:
-                time.sleep(0.2)
+                time.sleep(0.1)
+        print('ROI_image_stream : ROI extraction Thread stopped\n')
 
+    def getKernel(self, size):
+        size = int(size)
+        return cv.getStructuringElement(cv.MORPH_ELLIPSE, (size, size),
+                                        ((int((size - 1) / 2), int((size - 1) / 2))))
     def __findBlob(self, image):
         """
         __findBlob: from given image, applay noise filter and find blob.
@@ -164,52 +241,40 @@ class ROI_image_stream():
         --------------------------------------------------------------------------------
         """
         # Process Image
-        image = cv.threshold(image, self.threshold, 0, cv.THRESH_TOZERO)[1]
-        # according to the doc, 0 should freeze the backsub, but it fails So we put small value
-        masked_image = self.backSub.apply(image, learningRate=1e-6)
+        image = cv.bitwise_and(image, image, mask=self.global_mask)
+        
+        # Background Subtractor : adaptive learning rate adjustment
+        normal_lr = 1e-4
+        stationary_lr = 1e-6
+        stationary_criterion = self.animalSize * 1.1
 
-        def getKernel(size):
-            size = int(size)
-            return cv.getStructuringElement(cv.MORPH_ELLIPSE, (size, size),
-                                            ((int((size - 1) / 2), int((size - 1) / 2))))
+        masked_image = self.backSub.apply(image, learningRate=self.backSub_lr)
+        if self.stableBackground: # if stable, don't change the background model
+            self.backSub_lr = 1e-8
+        else:
+            if (self.masked_image == []): # empty
+                self.backSub_lr = normal_lr
+            else:
+                if cv.countNonZero(cv.bitwise_and(masked_image, self.masked_image)) > stationary_criterion:
+                    self.backSub_lr = stationary_lr
+                else:
+                    self.backSub_lr = normal_lr
+        self.masked_image = masked_image
 
         # opening -> delete noise : erode and dilate
         # closing -> make into big object : dilate and erode
         denoised_mask = masked_image
-        denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_OPEN, getKernel(3))
-        denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_OPEN, getKernel(5))
-        denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_CLOSE, getKernel(10))
-        denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_OPEN, getKernel(7))
-        denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_OPEN, getKernel(12))
-
-        # Detect Blob
-        parameter = cv.SimpleBlobDetector_Params()
-        parameter.filterByArea = True
-        parameter.filterByConvexity = True
-        parameter.filterByCircularity = True
-        parameter.filterByInertia = False
-        parameter.filterByColor = False
-        parameter.minArea = 500  # this value defines the minimum size of the blob
-        parameter.maxArea = 10000  # this value defines the maximum size of the blob
-        parameter.minDistBetweenBlobs = 1
-        parameter.minConvexity = 0.3
-        parameter.minCircularity = 0.3
-        parameter.minThreshold = 253
-        parameter.maxThreshold = 255
-        parameter.thresholdStep = 1
-        detector = cv.SimpleBlobDetector_create(parameter)
-
-        # soft detector
-        parameter.minConvexity = 0.15
-        parameter.minCircularity = 0.15
-
-        detector_soft = cv.SimpleBlobDetector_create(parameter)
+        denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_OPEN, self.getKernel(3))
+        denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_OPEN, self.getKernel(5))
+        denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_CLOSE, self.getKernel(10))
+        denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_OPEN, self.getKernel(7))
+        denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_OPEN, self.getKernel(12))
 
         # detect
-        detected_blob = detector.detect(denoised_mask)
+        detected_blob = self.detector.detect(denoised_mask)
 
         if len(detected_blob) == 0: # if not found, try softer one
-            detected_blob = detector_soft.detect(denoised_mask)
+            detected_blob = self.detector_soft.detect(denoised_mask)
 
         return detected_blob
 

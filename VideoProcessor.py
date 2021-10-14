@@ -60,8 +60,8 @@ class VideoProcessor:
         time_sec = self.num_frame / self.fps
         print(f"VideoProcessor : Video Info : {self.num_frame:05d}frames : {int(np.floor(time_sec/60)):d} m {int(np.remainder(time_sec,60)):d} s")
 
-    def trainBackgroundSubtractor(self, stride=1000):
-        self.istream.trainBackgroundSubtractor(stride)
+    def trainBackgroundSubtractor(self):
+        self.istream.trainBackgroundSubtractor()
 
     def checkStartPosition(self):
         """
@@ -124,7 +124,7 @@ class VideoProcessor:
         save_path : pathlib.PosixPath object : save path. if nothing is provided, save next to target video
         """
         if not self.isProcessed:
-            raise (BaseException('VideoProcessor : run the processor first!'))
+            raise(BaseException('VideoProcessor : run the processor first!'))
         if save_path == '':
             save_path = self.video_path
 
@@ -144,13 +144,13 @@ class VideoProcessor:
             else:
                 raise(BaseException('VideoProcessor : Save path must end with .csv'))
         else:
-            raise (BaseException('VideoProcessor : Unknown path'))
+            raise(BaseException('VideoProcessor : Unknown path'))
 
         np.savetxt(str(txt_save_path.absolute()),self.output_data,'%d',delimiter='\t')
 
     def checkResult(self, num_frame_to_check = 10):
         if not self.isProcessed:
-            raise (BaseException('VideoProcessor : run the processor first!'))
+            raise(BaseException('VideoProcessor : run the processor first!'))
 
         if type(num_frame_to_check) is np.ndarray:
             frames = num_frame_to_check
