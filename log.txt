@@ -1,0 +1,28 @@
+****************************************************************
+21OCT14
+**************************************************************** 
++ Adaptive ROI selection applied. 
+    - changed KNN background subtractor to MOG2 algorithm
+    - learning rate for the back sub is modified according to the resemblance of the backsubed mask.
+    - if the two following frames have similar backsubed mask, then the learning rate is lowered.
+    - This operation is done by bitwize_and method
+    => this resulted much better ROI selection 
++ ROI function applied.
+    - I think this does not improve the result a lot, but I just added.
+    - After constructing the ROI_image_stream, user manually select the ROI of the video stream.
+    - Any image processed into the 
+# TODO
+    - I don't know the exact algorithm of the MOG2. I setup the parameters with few trials and errors,
+    but I should look into the original work to set the best parameters for my purpose.
+
+****************************************************************
+21OCT13
+**************************************************************** 
+# Problems
+    * no adaptive ROI selection.
+        => if background intensity changes in the middle of the video, ROI extractor totally lost.
+        However, I have to use the whole video when I initially build the forground extractor.
+        Becasue time to time the animal do not move during the initial seconds so animal fades out.
+            => check the ROI position and apply adaptive learing rate according to the position difference?
+    * Build manual label corrector.
+
