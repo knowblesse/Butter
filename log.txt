@@ -1,4 +1,16 @@
 ****************************************************************
+21OCT15
+**************************************************************** 
+* New Model
+    - If the wire of the recording device is in the ROI, time to time the Net fails to detect the head.
+    - I added two dropout layers to the original Net, but the accuracy is not high enough.
+        -7800 epochs : 15 hours : GTX 1060 3G
+    - Instead, I labeled some failed images and continued the training with the original Net
++ Continue Training Function added
+    - I separated loading the dataset function (+ augmentation) with the training part
+    - I also added the ConintueTrainNetwork.py
+
+****************************************************************
 21OCT14
 **************************************************************** 
 + Adaptive ROI selection applied. 

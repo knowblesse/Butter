@@ -48,7 +48,6 @@ if base_network == 'mobilenet':
     final_layer_ConvT = layers.Conv2DTranspose(64,kernel_size=(8,8))(base_model.get_layer('block_16_project_BN').output)
     linker_input = keras.layers.add([final_layer_ConvT, base_model.get_layer('block_9_project_BN').output])
     linker_output = keras.layers.Flatten()(linker_input)
-    linker_output = keras.layers.Dropout(0.3, name='LO_D')(linker_output)
 elif base_network == 'inception_v3':
     final_layer_ConvT = keras.layers.Conv2DTranspose(2048,kernel_size=(12,12))(base_model.get_layer('mixed5').output)
     linker_input = keras.layers.concatenate([final_layer_ConvT, base_model.get_layer('mixed10').output])
@@ -68,7 +67,7 @@ FC = keras.layers.Dense(4, activation='linear',name='FC_3')(FC)
 # Compile and Train
 ################################################################
 new_model = Model(inputs=base_model.input, outputs=FC)
-new_model.compile(optimizer=keras.optimizers.SGD(learning_rate=5e-6, momentum=0.2), loss='mae', metrics='mae')
+new_model.compile(optimizer=keras.optimizers.SGD(learning_rate=5e-7, momentum=0.07), loss='mae', metrics='mae')
 #new_model.compile(optimizer=keras.optimizers.Adagrad(learning_rate=1e-4, initial_accumulator_value=0.2), loss='mae', metrics='mae')
 start_time = time.time()
 save_interval = 300
