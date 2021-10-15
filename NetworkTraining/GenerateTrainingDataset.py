@@ -24,9 +24,8 @@ from checkPreviousDataset import checkPreviousDataset
 ################################################################
 # Constants
 ################################################################
-new_data_folder = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21JAN5/#21JAN5-210622-180202')#Path.home() / 'VCF/butter/dataset'
+new_data_folder = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21JAN5/#21JAN5-210813-182242_IL')#Path.home() / 'VCF/butter/dataset'
 base_network = 'mobilenet'
-istream_threshold = 70
 ################################################################
 # Setup
 ################################################################
@@ -59,8 +58,7 @@ except:
 #           2. transform labeled location into in-ROI location
 ################################################################
 istream = ROI_image_stream(new_data_folder, ROI_size=base_network_inputsize)
-istream.threshold = istream_threshold
-istream.trainBackgroundSubtractor(stride=500)
+istream.trainBackgroundSubtractor()
 
 new_data_in_roi = np.zeros((len(labeledIndex), 3))
 for i, frame_number in enumerate(labeledIndex):
