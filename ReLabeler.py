@@ -4,24 +4,27 @@ Read the video and buttered csv data, check, and relabel if necessary
 from pathlib import Path
 import cv2 as cv
 from ROI_image_stream import vector2degree
+import numpy as np
 
 # Constants
-TANK_PATH = Path('./')
+TANK_PATH = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21JAN5/#21JAN5-210622-180202_PL')
 
 # Find the path to the video 
 if sorted(TANK_PATH.glob('*.mkv')): # path contains video.mkv
     # TODO: if there are multiple video files, raise the error
     path_video = next(TANK_PATH.glob('*.mkv'))
-    print('ROI_image_stream : found *.mkv')
+    print('ReLabeler : found *.mkv')
 elif sorted(TANK_PATH.glob('*.avi')): # path contains video.avi
     path_video = next(TANK_PATH.glob('*.avi'))
-    print('ROI_image_stream : found *.avi')
+    print('ReLabeler : found *.avi')
 else:
-    raise(BaseException(f'ROI_image_stream : Can not find video file in {TANK_PATH}'))
+    raise(BaseException(f'ReLabeler : Can not find video file in {TANK_PATH}'))
 
 # Find the csv to the video
 if sorted(TANK_PATH.glob(str(path_video.stem)+'_buttered.csv')):
     path_csv = next(TANK_PATH.glob(str(path_video.stem)+'_buttered.csv'))
+else:
+    raise (BaseException(f'ReLabeler : Can not find buttered file in {TANK_PATH}'))
 
 # Load the video and the label data
 vid = cv.VideoCapture(str(path_video))
@@ -33,16 +36,15 @@ current_label_index = 0
 
 # Main UI functions and callbacks
 def getFrame(label_index):
-    current_frame = data[label_index,0]
+    current_frame = int(data[label_index,0])
     vid.set(cv.CAP_PROP_POS_FRAMES, current_frame)
     ret, image = vid.read()
     if not ret:
         raise(BaseException('Can not read the frame'))
-    cv.putText(image, str(current_frame), [0,vid.get(cv.CAP_PROP_FRAME_HEIGHT)],fontFace=10, color=[0,0,0])
+    cv.putText(image, f'{current_frame} - {label_index/data.shape[0]*100:.2f}%', [0,int(vid.get(cv.CAP_PROP_FRAME_HEIGHT)-1)],fontFace=cv.FONT_HERSHEY_DUPLEX, fontScale=0.8, color=[255,255,255], thickness=1)
     if data[label_index,1] != -1:
         cv.circle(image, (round(data[label_index,2]), round(data[label_index,1])), 3, [0,0,255], -1 )
-        cv.line(img, (round(data[label_index,2]), round(data[label_index,1])), (round(data[label_index,2] + 30*np.cos(np.deg2rad(data[label_index,3]))), round(data[label_index,1] + 30*np.sin(np.deg2rad(data[label_index,3])))), [0,255,255], 2)
-        
+        cv.line(image, (round(data[label_index,2]), round(data[label_index,1])), (round(data[label_index,2] + 30*np.cos(np.deg2rad(data[label_index,3]))), round(data[label_index,1] + 30*np.sin(np.deg2rad(data[label_index,3])))), [0,255,255], 2)
     return image
 
 class LabelObject:
@@ -54,7 +56,7 @@ class LabelObject:
         self.image = image
         self.start_coordinate = []
         self.end_coordinate = []
-        self.active = True 
+        self.active = False
         self.isLabeled = False
 
 def drawLine(event, x, y, f, obj):
@@ -65,9 +67,10 @@ def drawLine(event, x, y, f, obj):
         elif event == cv.EVENT_LBUTTONUP:
             obj.active = False
             obj.isLabeled = True
+            obj.end_coordinate = [x, y]
         elif event == cv.EVENT_MOUSEMOVE:
             if obj.active:
-                obj.image = cv.line(obj.image_org.copy(), obj.start_coordinate, [x,y], [255,0,0], 2)
+                obj.image = cv.line(obj.image_org.copy(), obj.start_coordinate, [x, y], [255,0,0], 2)
 
 # Start Main UI 
 key = ''
@@ -75,34 +78,36 @@ labelObject = LabelObject()
 cv.namedWindow('Main')
 cv.setMouseCallback('Main', drawLine, labelObject)
 
-while key=='q':
+while key!=ord('q'):
     image = getFrame(current_label_index)
     cv.imshow('Main', image)
     key = cv.waitKey()
-    if key == 'a': # backward 1 min
-        current_label_index = np.max([0, current_label_index - (60*lps)]) 
-    elif key == 'f': # forward 1 min
-        current_label_index = np.min([data[-1,0], current_label_index + (60*lps)]) 
-    elif key == 's': # backward 1 label
-        current_label_index = np.max([0, current_label_index - 1]) 
-    elif key == 'd': # forward 1 label
-        current_label_index = np.min([data[-1,0], current_label_index + 1])
-    elif key == 'r': # relabel
+    if key == ord('a'): # backward 0 min
+        current_label_index = int(np.max([0, current_label_index - (60*lps)]))
+    elif key == ord('f'): # forward 1 min
+        current_label_index = int(np.min([data.shape[0]-1, current_label_index + (60*lps)]))
+    elif key == ord('s'): # backward 1 label
+        current_label_index = int(np.max([0, current_label_index - 1]) )
+    elif key == ord('d'): # forward 1 label
+        current_label_index = int(np.min([data.shape[0]-1, current_label_index + 1]))
+    elif key == ord('r'): # relabel
         labelObject.initialize(image)
         while not labelObject.isLabeled:
             cv.imshow('Main', labelObject.image)
             cv.waitKey(1)
-        data[current_label,1] = labelObject.start_coordinate[1]
-        data[current_label,2] = labelObject.start_coordinate[0]
-        data[current_label,3] = vector2degree(
+        data[current_label_index,1] = labelObject.start_coordinate[1]
+        data[current_label_index,2] = labelObject.start_coordinate[0]
+        data[current_label_index,3] = vector2degree(
                 labelObject.start_coordinate[1],
                 labelObject.start_coordinate[0],
                 labelObject.end_coordinate[1],
                 labelObject.end_coordinate[0])
-    elif key == 'e': # read the next error
+    elif key == ord('e'): # read the next error
         foundErrorIndex = np.where(data[:,1] == -1)[0]
         if len(foundErrorIndex) > 0:
             current_label_index = foundErrorIndex[0] 
         else:
             print('ReLabeler : No More Error Frame!')
 
+cv.destroyWindow('Main')
+np.savetxt(str(path_csv), data,fmt='%d',delimiter='\t')
