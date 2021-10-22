@@ -7,7 +7,8 @@ from ROI_image_stream import vector2degree
 import numpy as np
 
 # Constants
-TANK_PATH = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21JAN5/#21JAN5-210622-180202_PL')
+#TANK_PATH = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21JAN5/#21JAN5-210622-180202_PL')
+TANK_PATH = Path('D:/Data/Lobster/Lobster_Recording-200319-161008/21JAN5/#21JAN5-210629-183643_PL')
 
 # Find the path to the video 
 if sorted(TANK_PATH.glob('*.mkv')): # path contains video.mkv
@@ -34,6 +35,12 @@ fps = vid.get(cv.CAP_PROP_FPS)
 lps = fps/data[1,0] # labels per second
 current_label_index = 0
 
+# Find the excursion
+distance = ((data[1:,1] - data[0:-1,1]) ** 2 + (data[1:,2] - data[0:-1,2]) ** 2) ** 0.5
+velocity = np.diff(distance)
+possibleExcursion = np.append(False,np.append(np.abs(velocity) > (np.mean(velocity) + 3*np.std(velocity)), False))
+numExcursion = np.sum(possibleExcursion)
+
 # Main UI functions and callbacks
 def getFrame(label_index):
     current_frame = int(data[label_index,0])
@@ -41,7 +48,7 @@ def getFrame(label_index):
     ret, image = vid.read()
     if not ret:
         raise(BaseException('Can not read the frame'))
-    cv.putText(image, f'{current_frame} - {label_index/data.shape[0]*100:.2f}%', [0,int(vid.get(cv.CAP_PROP_FRAME_HEIGHT)-1)],fontFace=cv.FONT_HERSHEY_DUPLEX, fontScale=0.8, color=[255,255,255], thickness=1)
+    cv.putText(image, f'{current_frame} - {label_index/data.shape[0]*100:.2f}% - Excursion {np.sum(possibleExcursion)}', [0,int(vid.get(cv.CAP_PROP_FRAME_HEIGHT)-1)],fontFace=cv.FONT_HERSHEY_DUPLEX, fontScale=0.8, color=[255,255,255], thickness=1)
     if data[label_index,1] != -1:
         cv.circle(image, (round(data[label_index,2]), round(data[label_index,1])), 3, [0,0,255], -1 )
         cv.line(image, (round(data[label_index,2]), round(data[label_index,1])), (round(data[label_index,2] + 30*np.cos(np.deg2rad(data[label_index,3]))), round(data[label_index,1] + 30*np.sin(np.deg2rad(data[label_index,3])))), [0,255,255], 2)
@@ -77,24 +84,40 @@ key = ''
 labelObject = LabelObject()
 cv.namedWindow('Main')
 cv.setMouseCallback('Main', drawLine, labelObject)
+labelObject.initialize(getFrame(current_label_index))
 
 while key!=ord('q'):
-    image = getFrame(current_label_index)
-    cv.imshow('Main', image)
-    key = cv.waitKey()
+    cv.imshow('Main', labelObject.image)
+    key = cv.waitKey(1)
     if key == ord('a'): # backward 0 min
         current_label_index = int(np.max([0, current_label_index - (60*lps)]))
+        labelObject.initialize(getFrame(current_label_index))
     elif key == ord('f'): # forward 1 min
         current_label_index = int(np.min([data.shape[0]-1, current_label_index + (60*lps)]))
+        labelObject.initialize(getFrame(current_label_index))
     elif key == ord('s'): # backward 1 label
         current_label_index = int(np.max([0, current_label_index - 1]) )
+        labelObject.initialize(getFrame(current_label_index))
     elif key == ord('d'): # forward 1 label
         current_label_index = int(np.min([data.shape[0]-1, current_label_index + 1]))
-    elif key == ord('r'): # relabel
-        labelObject.initialize(image)
-        while not labelObject.isLabeled:
-            cv.imshow('Main', labelObject.image)
-            cv.waitKey(1)
+        labelObject.initialize(getFrame(current_label_index))
+    elif key == ord('e'): # read the next error
+        foundErrorIndex = np.where(data[:,1] == -1)[0]
+        if len(foundErrorIndex) > 0:
+            current_label_index = foundErrorIndex[0]
+            labelObject.initialize(getFrame(current_label_index))
+        else:
+            print('ReLabeler : No More Error Frame!')
+    elif key == ord('w'): # read the next possible excursion
+        foundExcursionIndex = np.where(possibleExcursion)[0]
+        if len(foundExcursionIndex) > 0:
+            current_label_index = foundExcursionIndex[0]
+            possibleExcursion[current_label_index] = False
+            labelObject.initialize(getFrame(current_label_index))
+        else:
+            print('ReLabeler : No More Excursion Frame!')
+
+    if labelObject.isLabeled:
         data[current_label_index,1] = labelObject.start_coordinate[1]
         data[current_label_index,2] = labelObject.start_coordinate[0]
         data[current_label_index,3] = vector2degree(
@@ -102,12 +125,10 @@ while key!=ord('q'):
                 labelObject.start_coordinate[0],
                 labelObject.end_coordinate[1],
                 labelObject.end_coordinate[0])
-    elif key == ord('e'): # read the next error
-        foundErrorIndex = np.where(data[:,1] == -1)[0]
-        if len(foundErrorIndex) > 0:
-            current_label_index = foundErrorIndex[0] 
-        else:
-            print('ReLabeler : No More Error Frame!')
+        labelObject.initialize(getFrame(current_label_index))
 
 cv.destroyWindow('Main')
 np.savetxt(str(path_csv), data,fmt='%d',delimiter='\t')
+
+# Show next excursion by the value
+# delete the excursion marker if seen by user
