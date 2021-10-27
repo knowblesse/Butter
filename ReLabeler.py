@@ -8,7 +8,7 @@ import numpy as np
 
 # Constants
 #TANK_PATH = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21JAN5/#21JAN5-210622-180202_PL')
-TANK_PATH = Path('D:/Data/Lobster/Lobster_Recording-200319-161008/21JAN5/#21JAN5-210629-183643_PL')
+TANK_PATH = Path('D:/Data/Lobster/Lobster_Recording-200319-161008/21JAN5/#21JAN5-210813-182242_IL')
 
 # Find the path to the video 
 if sorted(TANK_PATH.glob('*.mkv')): # path contains video.mkv
@@ -36,10 +36,9 @@ lps = fps/data[1,0] # labels per second
 current_label_index = 0
 
 # Find the excursion
-distance = ((data[1:,1] - data[0:-1,1]) ** 2 + (data[1:,2] - data[0:-1,2]) ** 2) ** 0.5
-velocity = np.diff(distance)
-possibleExcursion = np.append(False,np.append(np.abs(velocity) > (np.mean(velocity) + 3*np.std(velocity)), False))
-numExcursion = np.sum(possibleExcursion)
+velocity = ((data[1:,1] - data[0:-1,1]) ** 2 + (data[1:,2] - data[0:-1,2]) ** 2) ** 0.5
+velocity = np.append(velocity, 0)
+possibleExcursion = np.abs(velocity) > (np.mean(velocity) + 3*np.std(velocity))
 
 # Main UI functions and callbacks
 def getFrame(label_index):
@@ -86,36 +85,37 @@ cv.namedWindow('Main')
 cv.setMouseCallback('Main', drawLine, labelObject)
 labelObject.initialize(getFrame(current_label_index))
 
+def refreshScreen():
+    labelObject.initialize(getFrame(current_label_index))
+    possibleExcursion[current_label_index] = False
+    velocity[current_label_index] = 0
+
 while key!=ord('q'):
     cv.imshow('Main', labelObject.image)
     key = cv.waitKey(1)
     if key == ord('a'): # backward 0 min
         current_label_index = int(np.max([0, current_label_index - (60*lps)]))
-        labelObject.initialize(getFrame(current_label_index))
+        refreshScreen()
     elif key == ord('f'): # forward 1 min
         current_label_index = int(np.min([data.shape[0]-1, current_label_index + (60*lps)]))
-        labelObject.initialize(getFrame(current_label_index))
+        refreshScreen()
     elif key == ord('s'): # backward 1 label
         current_label_index = int(np.max([0, current_label_index - 1]) )
-        labelObject.initialize(getFrame(current_label_index))
+        refreshScreen()
     elif key == ord('d'): # forward 1 label
         current_label_index = int(np.min([data.shape[0]-1, current_label_index + 1]))
-        labelObject.initialize(getFrame(current_label_index))
+        refreshScreen()
     elif key == ord('e'): # read the next error
         foundErrorIndex = np.where(data[:,1] == -1)[0]
         if len(foundErrorIndex) > 0:
             current_label_index = foundErrorIndex[0]
-            labelObject.initialize(getFrame(current_label_index))
+            refreshScreen()
         else:
             print('ReLabeler : No More Error Frame!')
     elif key == ord('w'): # read the next possible excursion
-        foundExcursionIndex = np.where(possibleExcursion)[0]
-        if len(foundExcursionIndex) > 0:
-            current_label_index = foundExcursionIndex[0]
-            possibleExcursion[current_label_index] = False
-            labelObject.initialize(getFrame(current_label_index))
-        else:
-            print('ReLabeler : No More Excursion Frame!')
+        foundExcursionIndex = np.argmax(np.abs(velocity))
+        current_label_index = foundExcursionIndex
+        refreshScreen()
 
     if labelObject.isLabeled:
         data[current_label_index,1] = labelObject.start_coordinate[1]
@@ -129,6 +129,3 @@ while key!=ord('q'):
 
 cv.destroyWindow('Main')
 np.savetxt(str(path_csv), data,fmt='%d',delimiter='\t')
-
-# Show next excursion by the value
-# delete the excursion marker if seen by user
