@@ -8,7 +8,7 @@ def loadDataset(base_network):
     ################################################################
     # Setup
     ################################################################
-    if base_network == 'mobilenet':
+    if base_network == 'mobilenet_v2':
         base_network_inputsize = 224
     elif base_network == 'inception_v3':
         base_network_inputsize = 300
@@ -69,18 +69,21 @@ def loadDataset(base_network):
     # Check loaded Dataset
     #################################################################
 
-    idx = np.random.randint(dataSize*4)
+    # idx = np.random.randint(dataSize*4)
 
-    plt.clf()
-    plt.imshow(X[idx,:,:,:]/255)
-    plt.scatter(y[idx,1], y[idx,0])
+    # plt.clf()
+    # plt.imshow(X[idx,:,:,:]/255)
+    # plt.scatter(y[idx,1], y[idx,0])
 
-    r = 30
-    plt.plot([y[idx,1], y[idx,3]], [y[idx,0], y[idx,2]], LineWidth=3, color = 'r')
+    # r = 30
+    # plt.plot([y[idx,1], y[idx,3]], [y[idx,0], y[idx,2]], LineWidth=3, color = 'r')
 
     #################################################################
     # Convert Dataset
     #################################################################
-    X_conv = keras.applications.mobilenet_v2.preprocess_input(X)
+    if base_network == 'mobilenet_v2':
+        X_conv = keras.applications.mobilenet_v2.preprocess_input(X)
+    elif base_network == 'inception_v3':
+        X_conv = keras.applications.inception_v3.preprocess_input(X)
 
     return (X_conv, y)

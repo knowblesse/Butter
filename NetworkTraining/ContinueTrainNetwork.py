@@ -10,7 +10,7 @@ total_epoch = 1500
 original_epoch = 6000
 
 model_path = Path('../Model_210911_6000epoch')
-base_network = 'mobilenet'
+base_network = 'mobilenet_v2'
 X_conv, y = loadDataset.loadDataset(base_network)
 new_model = keras.models.load_model(str(model_path))
 

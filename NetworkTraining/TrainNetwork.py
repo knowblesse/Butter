@@ -24,18 +24,18 @@ tf.config.experimental.set_memory_growth(gpu[0], True)
 ################################################################
 # Constants
 ################################################################
-base_network = 'mobilenet'
+base_network = 'mobilenet_v2'
 model_save_path = Path('./Model_211014_5000epoch')
 
-X_conv, y = loadDataset.loadDataset(base_network)
+X_conv, y = loadDataset.loadDataset(base_network) # X_conv : converted to match the network input format
 
 ################################################################
 # Build Model - Base model
 ################################################################
-if base_network == 'mobilenet':
-    base_model = keras.applications.MobileNetV2(input_shape=X.shape[1:], include_top=False, weights='imagenet')
+if base_network == 'mobilenet_v2':
+    base_model = keras.applications.MobileNetV2(input_shape=X_conv.shape[1:], include_top=False, weights='imagenet')
 elif base_network == 'inception_v3':
-    base_model = keras.applications.InceptionV3(input_shape=X.shape[1:], include_top=False, weights='imagenet')
+    base_model = keras.applications.InceptionV3(input_shape=X_conv.shape[1:], include_top=False, weights='imagenet')
 else:
     raise(BaseException('Not implemented'))
 
