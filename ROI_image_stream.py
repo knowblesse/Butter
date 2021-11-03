@@ -29,6 +29,9 @@ class ROI_image_stream():
         elif sorted(path_data.glob('*.avi')): # path contains video.avi
             self.path_video = next(path_data.glob('*.avi'))
             print('ROI_image_stream : found *.avi')
+        elif sorted(path_data.glob('*.mp4')):  # path contains video.avi
+            self.path_video = next(path_data.glob('*.mp4'))
+            print('ROI_image_stream : found *.mp4')
         else:
             raise(BaseException(f'ROI_image_stream : Can not find video file in {path_data}'))
 
@@ -164,11 +167,12 @@ class ROI_image_stream():
         --------------------------------------------------------------------------------
         frame_number : int : frame to process
         """
-        fig = plt.figure(1)
-        fig.clf()
-        ax = fig.subplots(1,1)
-        ax.imshow(self.getFrame(frame_number))
-        ax.set_title('Frame : %05d' % frame_number,fontdict={'fontsize': 15})
+        image = self.getFrame(frame_number)
+
+        cv.putText(image,f'Frame : {frame_number:.0f}', [0, int(image.shape[0] - 1)], fontFace=cv.FONT_HERSHEY_DUPLEX, fontScale=0.8,
+                   color=[255, 255, 255], thickness=1)
+        cv.imshow('Frame', image)
+        cv.waitKey()
 
     def startROIextractionThread(self, frame_number_array):
         """

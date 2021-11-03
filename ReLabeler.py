@@ -18,6 +18,9 @@ if sorted(TANK_PATH.glob('*.mkv')): # path contains video.mkv
 elif sorted(TANK_PATH.glob('*.avi')): # path contains video.avi
     path_video = next(TANK_PATH.glob('*.avi'))
     print('ReLabeler : found *.avi')
+elif sorted(TANK_PATH.glob('*.mp4')): # path contains video.avi
+    path_video = next(TANK_PATH.glob('*.mp4'))
+    print('ReLabeler : found *.mp4')
 else:
     raise(BaseException(f'ReLabeler : Can not find video file in {TANK_PATH}'))
 
