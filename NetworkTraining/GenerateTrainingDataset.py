@@ -18,18 +18,18 @@ Generate image dataset for network training.
 import numpy as np
 import cv2 as cv
 from pathlib import Path
-from ROI_image_stream import ROI_image_stream
+from ROI_image_stream import ROI_image_stream, BlobDetectionFailureError
 from checkPreviousDataset import checkPreviousDataset
 
 ################################################################
 # Constants
 ################################################################
-new_data_folder = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21JAN5/#21JAN5-210813-182242_IL')#Path.home() / 'VCF/butter/dataset'
-base_network = 'mobilenet'
+new_data_folder = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21JAN2/#21JAN2-210428-195618_IL')#Path.home() / 'VCF/butter/dataset'
+base_network = 'mobilenet_v2'
 ################################################################
 # Setup
 ################################################################
-if base_network == 'mobilenet':
+if base_network == 'mobilenet_v2':
     base_network_inputsize = 224
 elif base_network == 'inception_v3':
     base_network_inputsize = 300
@@ -45,7 +45,7 @@ else:
 # Load csv file from new dataset
 ################################################################
 try:
-    csv_data = np.loadtxt(str(next(new_data_folder.glob('*.csv'))),delimiter=',')
+    csv_data = np.loadtxt(str(next(new_data_folder.glob('*data.csv'))),delimiter=',')
     if csv_data.shape[1] != 4:
         raise(BaseException('Label csv file has wrong number of column'))
     labeledIndex = np.where(csv_data[:,3] == 1)[0]
@@ -60,12 +60,18 @@ except:
 istream = ROI_image_stream(new_data_folder, ROI_size=base_network_inputsize)
 istream.trainBackgroundSubtractor()
 
-new_data_in_roi = np.zeros((len(labeledIndex), 3))
-for i, frame_number in enumerate(labeledIndex):
-    chosen_image, coor = istream.getROIImage(frame_number)
-    cv.imwrite(str(Path(f'./Dataset/Dataset_{dataset_number + i:04d}.png')),chosen_image)
-    new_data_in_roi[i,0:2] = new_data_csv[i,0:2] - coor + base_network_inputsize / 2
-    new_data_in_roi[i,2] = new_data_csv[i,2]
+new_data_in_roi = np.zeros((0, 3))
+i = 0
+for frame_number in labeledIndex:
+    try:
+        chosen_image, coor = istream.getROIImage(frame_number)
+        cv.imwrite(str(Path(f'./Dataset/Dataset_{dataset_number + i:04d}.png')),chosen_image)
+        new_data_in_roi = np.vstack(
+            (new_data_in_roi, np.hstack((new_data_csv[i, 0:2] - coor + base_network_inputsize / 2, new_data_csv[i, 2]))))
+    except BlobDetectionFailureError:
+        print(f'GenerateTrainingDataset : {frame_number} Couldn\'t detect ROI')
+    i += 1
+
 
 if 'y' == input(f'GenerateTrainingDataset : {new_data_in_roi.shape[0]:d} data will be added. Continue?(y/n)'):
     dataset_csv = np.vstack((dataset_csv[:,1::], new_data_in_roi))
