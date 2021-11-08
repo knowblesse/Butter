@@ -7,8 +7,8 @@ from ROI_image_stream import vector2degree
 import numpy as np
 
 # Constants
-#TANK_PATH = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21JAN5/#21JAN5-210622-180202_PL')
-TANK_PATH = Path('D:/Data/Lobster/Lobster_Recording-200319-161008/21JAN5/#21JAN5-210813-182242_IL')
+TANK_PATH = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21JAN2/#21JAN2-210503-180009_IL')
+#TANK_PATH = Path('D:/Data/Lobster/Lobster_Recording-200319-161008/21JAN5/#21JAN5-210803-182450_IL')
 
 # Find the path to the video 
 if sorted(TANK_PATH.glob('*.mkv')): # path contains video.mkv
@@ -113,6 +113,7 @@ while key!=ord('q'):
         if len(foundErrorIndex) > 0:
             current_label_index = foundErrorIndex[0]
             refreshScreen()
+            print(f'Relabeler : {foundErrorIndex.shape[0]} Error Frame(s) Left')
         else:
             print('ReLabeler : No More Error Frame!')
     elif key == ord('w'): # read the next possible excursion
@@ -121,14 +122,18 @@ while key!=ord('q'):
         refreshScreen()
 
     if labelObject.isLabeled:
-        data[current_label_index,1] = labelObject.start_coordinate[1]
-        data[current_label_index,2] = labelObject.start_coordinate[0]
-        data[current_label_index,3] = vector2degree(
+        try:
+            data[current_label_index,1] = labelObject.start_coordinate[1]
+            data[current_label_index,2] = labelObject.start_coordinate[0]
+            data[current_label_index, 3] = vector2degree(
                 labelObject.start_coordinate[1],
                 labelObject.start_coordinate[0],
                 labelObject.end_coordinate[1],
                 labelObject.end_coordinate[0])
-        labelObject.initialize(getFrame(current_label_index))
+            labelObject.initialize(getFrame(current_label_index))
+        except IndexError :
+            labelObject.isLabeled = False
+
 
 cv.destroyWindow('Main')
 np.savetxt(str(path_csv), data,fmt='%d',delimiter='\t')
