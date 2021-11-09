@@ -10,19 +10,17 @@ import numpy as np
 TANK_PATH = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21JAN2/#21JAN2-210503-180009_IL')
 #TANK_PATH = Path('D:/Data/Lobster/Lobster_Recording-200319-161008/21JAN5/#21JAN5-210803-182450_IL')
 
-# Find the path to the video 
-if sorted(TANK_PATH.glob('*.mkv')): # path contains video.mkv
-    # TODO: if there are multiple video files, raise the error
-    path_video = next(TANK_PATH.glob('*.mkv'))
-    print('ReLabeler : found *.mkv')
-elif sorted(TANK_PATH.glob('*.avi')): # path contains video.avi
-    path_video = next(TANK_PATH.glob('*.avi'))
-    print('ReLabeler : found *.avi')
-elif sorted(TANK_PATH.glob('*.mp4')): # path contains video.avi
-    path_video = next(TANK_PATH.glob('*.mp4'))
-    print('ReLabeler : found *.mp4')
+# Find the path to the video
+vidlist = []
+vidlist.extend([i for i in TANK_PATH.glob('*.mkv')])
+vidlist.extend([i for i in TANK_PATH.glob('*.avi')])
+vidlist.extend([i for i in TANK_PATH.glob('*.mp4')])
+if len(vidlist) == 0:
+    raise(BaseException(f'ReLabeler : Can not find video in {TANK_PATH}'))
+elif len(vidlist) > 1:
+    raise(BaseException(f'ReLabeler : Multiple video files found in {TANK_PATH}'))
 else:
-    raise(BaseException(f'ReLabeler : Can not find video file in {TANK_PATH}'))
+    path_video = vidlist[0]
 
 # Find the csv to the video
 if sorted(TANK_PATH.glob(str(path_video.stem)+'_buttered.csv')):

@@ -18,20 +18,26 @@ class ROI_image_stream():
         stableBackground : if True, only the median image is used as the background.
         """
         # Parameter
-        if path_data.suffix == '.mkv': # path is video.mkv
-            self.path_video = path_data
-        elif path_data.suffix == '.avi': # path is video.avi
-            self.path_video = path_data
-        elif sorted(path_data.glob('*.mkv')): # path contains video.mkv
-            # TODO: if there are multiple video files, raise the error
-            self.path_video = next(path_data.glob('*.mkv'))
-            print('ROI_image_stream : found *.mkv')
-        elif sorted(path_data.glob('*.avi')): # path contains video.avi
-            self.path_video = next(path_data.glob('*.avi'))
-            print('ROI_image_stream : found *.avi')
-        elif sorted(path_data.glob('*.mp4')):  # path contains video.avi
-            self.path_video = next(path_data.glob('*.mp4'))
-            print('ROI_image_stream : found *.mp4')
+        if path_data.is_file():
+            if path_data.suffix == '.mkv': # path is video.mkv
+                self.path_video = path_data
+            elif path_data.suffix == '.avi': # path is video.avi
+                self.path_video = path_data
+            elif path_data.suffix == '.mp4':
+                self.path_video = path_data
+            else:
+                raise(BaseException(f'ROI_image_stream : Following file is not a supported video type : {path_data}'))
+        elif path_data.is_dir():
+            vidlist = []
+            vidlist.append([i for i in path_data.glob('*.mkv')])
+            vidlist.append([i for i in path_data.glob('*.avi')])
+            vidlist.append([i for i in path_data.glob('*.mp4')])
+            if len(vidlist) == 0:
+                raise(BaseException(f'ROI_image_stream : Can not find video in {path_data}'))
+            elif len(vidlist) > 1:
+                raise(BaseException(f'ROI_image_stream : Multiple video files found in {path_data}'))
+            else:
+                self.path_video = vidlist[0]
         else:
             raise(BaseException(f'ROI_image_stream : Can not find video file in {path_data}'))
 
@@ -41,9 +47,19 @@ class ROI_image_stream():
 
         # setup VideoCapture
         self.vid = cv.VideoCapture(str(self.path_video))
-        self.num_frame = self.vid.get(cv.CAP_PROP_FRAME_COUNT)
         self.frame_size = (int(self.vid.get(cv.CAP_PROP_FRAME_HEIGHT)), int(self.vid.get(cv.CAP_PROP_FRAME_WIDTH)))
-        
+
+        # get total number of frame
+        #   I can not trust vid.get(cv.CAP_PROP_FRAME_COUNT), because sometime I can't retrieve the last frame with vid.read()
+        self.num_frame = int(self.vid.get(cv.CAP_PROP_FRAME_COUNT))
+        self.vid.set(cv.CAP_PROP_POS_FRAMES, self.num_frame)
+        ret, _ = self.vid.read()
+        while not ret:
+            print(f'ROI_image_stream : Can not read the frame from the last position. Decreasing the total frame count')
+            self.num_frame -= 1
+            self.vid.set(cv.CAP_PROP_POS_FRAMES, self.num_frame)
+            ret, _ = self.vid.read()
+
         # ROI size
         self.ROI_size = ROI_size
         self.half_ROI_size = int(np.round(self.ROI_size/2))
@@ -54,10 +70,6 @@ class ROI_image_stream():
         self.masked_image = []
         self.backSub_lr = 0
         self.stableBackground = stableBackground
-
-        # TODO Delete
-        self.multipleBlobs = 0
-        self.noBlob = 0
 
         # BlobDetector
         parameter = cv.SimpleBlobDetector_Params()
@@ -94,6 +106,16 @@ class ROI_image_stream():
     def trainBackgroundSubtractor(self):
         """
         trainBackgroundSubtractor : train BackgroundSubtractorKNN for initial movement detection
+        ----------------------------------------------------------------------------------------
+        training the background subtractor
+        1. read (numModelFrame) number of frames across the video
+        2. store these frames
+        3. use np.quantile to generate imageMedian image
+        4. subtract imageMedian from stored frames
+        5. remainder is the animal containing frame
+        6. calculate threshold from animal frame
+        7. get mean animal size
+        8. train background subtractor
         """
         self.backSub = cv.createBackgroundSubtractorMOG2()
         self.backSub.setNMixtures(3) #default : 5 : 30
@@ -309,10 +331,8 @@ class ROI_image_stream():
 
         # Further process detected blobs
         if len(detected_blob) == 0 :
-            self.noBlob += 1
             raise(BlobDetectionFailureError('No Blob'))
         elif len(detected_blob) > 1:# if multiple blob is detected, select the largest one
-            self.multipleBlobs += 1
             final_blob_index = 0
             if previous_rc != []: # use previous point to select blob
                 min_blob_distance = 1000000000
@@ -328,7 +348,6 @@ class ROI_image_stream():
                         max_blob_size = blob.size
                         final_blob_index = i
             detected_blob = [detected_blob[final_blob_index]]
-            #print(f'ROI_image_stream : Multiple blobs({len(detected_blob)}) detected in frame {frame_number}. The largest one is selected. {self.multipleBlobs}')
 
         blob_center_row, blob_center_col = int(np.round(detected_blob[0].pt[1])) , int(np.round(detected_blob[0].pt[0]))
 

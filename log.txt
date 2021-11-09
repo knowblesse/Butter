@@ -38,3 +38,12 @@
             => check the ROI position and apply adaptive learing rate according to the position difference?
     * Build manual label corrector.
 
+****************************************************************
+21NOV11
+**************************************************************** 
+# ReLabeler
+    * ReLabeler is working great! Using the left hand keys (aswd) allows faster relabeling
+    * Excursion detection feature seems to work well. 
+# ROI detection method need to be upgraded
+    * It works well in current state when applied to the Lobster Exp videos, but fails on Larget Exp videos. 
+    * If the animal stays in a specific area for too long time, it definately fails. 
