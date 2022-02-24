@@ -47,7 +47,8 @@ def getFrame(label_index):
     ret, image = vid.read()
     if not ret:
         raise(BaseException('Can not read the frame'))
-    cv.putText(image, f'{current_frame} - {label_index/data.shape[0]*100:.2f}% - Excursion {np.sum(possibleExcursion)}', [0,int(vid.get(cv.CAP_PROP_FRAME_HEIGHT)-1)],fontFace=cv.FONT_HERSHEY_DUPLEX, fontScale=0.8, color=[255,255,255], thickness=1)
+    cv.putText(image, f'{current_frame} - {label_index/data.shape[0]*100:.2f}% - Excursion {np.sum(possibleExcursion)}', [0,int(vid.get(cv.CAP_PROP_FRAME_HEIGHT)-10)],fontFace=cv.FONT_HERSHEY_DUPLEX, fontScale=0.8, color=[255,255,255], thickness=1)
+    cv.putText(image, 'a/f : +-1 min | s/d : +-1 label | e : error frame | w : excursion | q : quit', [0,15], fontFace=cv.FONT_HERSHEY_SIMPLEX, fontScale=0.5, color=[255,255,255], thickness=1)
     if data[label_index,1] != -1:
         cv.circle(image, (round(data[label_index,2]), round(data[label_index,1])), 3, [0,0,255], -1 )
         cv.line(image, (round(data[label_index,2]), round(data[label_index,1])), (round(data[label_index,2] + 30*np.cos(np.deg2rad(data[label_index,3]))), round(data[label_index,1] + 30*np.sin(np.deg2rad(data[label_index,3])))), [0,255,255], 2)
@@ -130,7 +131,6 @@ while key!=ord('q'):
             labelObject.initialize(getFrame(current_label_index))
         except IndexError :
             labelObject.isLabeled = False
-
 
 cv.destroyWindow('Main')
 np.savetxt(str(path_csv), data,fmt='%d',delimiter='\t')
