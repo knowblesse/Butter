@@ -7,8 +7,7 @@ from ROI_image_stream import vector2degree
 import numpy as np
 
 # Constants
-TANK_PATH = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21JAN2/#21JAN2-210503-180009_IL')
-#TANK_PATH = Path('D:/Data/Lobster/Lobster_Recording-200319-161008/21JAN5/#21JAN5-210803-182450_IL')
+TANK_PATH = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/20JUN1/#20JUN1-200814-120239_PL')
 
 # Find the path to the video
 vidlist = []

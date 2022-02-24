@@ -29,9 +29,9 @@ class ROI_image_stream():
                 raise(BaseException(f'ROI_image_stream : Following file is not a supported video type : {path_data}'))
         elif path_data.is_dir():
             vidlist = []
-            vidlist.append([i for i in path_data.glob('*.mkv')])
-            vidlist.append([i for i in path_data.glob('*.avi')])
-            vidlist.append([i for i in path_data.glob('*.mp4')])
+            vidlist.extend([i for i in path_data.glob('*.mkv')])
+            vidlist.extend([i for i in path_data.glob('*.avi')])
+            vidlist.extend([i for i in path_data.glob('*.mp4')])
             if len(vidlist) == 0:
                 raise(BaseException(f'ROI_image_stream : Can not find video in {path_data}'))
             elif len(vidlist) > 1:
@@ -52,7 +52,7 @@ class ROI_image_stream():
         # get total number of frame
         #   I can not trust vid.get(cv.CAP_PROP_FRAME_COUNT), because sometime I can't retrieve the last frame with vid.read()
         self.num_frame = int(self.vid.get(cv.CAP_PROP_FRAME_COUNT))
-        self.vid.set(cv.CAP_PROP_POS_FRAMES, self.num_frame)
+        self.vid.set(cv.CAP_PROP_POS_FRAMES, self.num_frame-1)
         ret, _ = self.vid.read()
         while not ret:
             print(f'ROI_image_stream : Can not read the frame from the last position. Decreasing the total frame count')

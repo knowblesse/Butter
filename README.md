@@ -19,6 +19,14 @@ Goes well with Lobster
 
 **/NetworkTraining/UpdateVerificationImage** : Using the dataset, generated marked images for verification purpose
 
+## debug
+**/debug/istream_test.py** : ROI extraction MORPH parameter selecting script
+**/debug/test_ROI_extraction.py** : ROI extraction testing script
+
+## util
+**/util/ReLabeler.py** : Manual Relabeling App 
+**/util/SaveLabeledVideo.py** : Generate Head Location / Head Direction labeled video
+
 # Notes
 
 ## VideoProcessor
