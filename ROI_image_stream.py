@@ -13,52 +13,19 @@ class ROI_image_stream():
         __init__ : initialize ROI image extraction stream object
         ****************************************************************
         path_data : Path object : path of the video or a folder containing the video
-        ROI_size : size of the extracting ROI. This must be a even number.
+        ROI_size : weight/height of the extracting ROI. This must be an even number.
         setMask : if True, ROI selection screen appears.
         stableBackground : if True, only the median image is used as the background.
         """
-        # Parameter
-        if path_data.is_file():
-            if path_data.suffix == '.mkv': # path is video.mkv
-                self.path_video = path_data
-            elif path_data.suffix == '.avi': # path is video.avi
-                self.path_video = path_data
-            elif path_data.suffix == '.mp4':
-                self.path_video = path_data
-            else:
-                raise(BaseException(f'ROI_image_stream : Following file is not a supported video type : {path_data}'))
-        elif path_data.is_dir():
-            vidlist = []
-            vidlist.extend([i for i in path_data.glob('*.mkv')])
-            vidlist.extend([i for i in path_data.glob('*.avi')])
-            vidlist.extend([i for i in path_data.glob('*.mp4')])
-            if len(vidlist) == 0:
-                raise(BaseException(f'ROI_image_stream : Can not find video in {path_data}'))
-            elif len(vidlist) > 1:
-                raise(BaseException(f'ROI_image_stream : Multiple video files found in {path_data}'))
-            else:
-                self.path_video = vidlist[0]
-        else:
-            raise(BaseException(f'ROI_image_stream : Can not find video file in {path_data}'))
+        # Setup VideoCapture
+        self.path_video = self.__readVideoPath(path_data)
+        self.vc = cv.VideoCapture(str(self.path_video))
+        self.frame_size = (int(self.vc.get(cv.CAP_PROP_FRAME_HEIGHT)), int(self.vc.get(cv.CAP_PROP_FRAME_WIDTH)))
+        self.num_frame = self.__getFrameSize(self.vc)
 
         # stream status 
         self.isBackgroundSubtractorTrained = False
         self.isMultithreading = False
-
-        # setup VideoCapture
-        self.vid = cv.VideoCapture(str(self.path_video))
-        self.frame_size = (int(self.vid.get(cv.CAP_PROP_FRAME_HEIGHT)), int(self.vid.get(cv.CAP_PROP_FRAME_WIDTH)))
-
-        # get total number of frame
-        #   I can not trust vid.get(cv.CAP_PROP_FRAME_COUNT), because sometime I can't retrieve the last frame with vid.read()
-        self.num_frame = int(self.vid.get(cv.CAP_PROP_FRAME_COUNT))
-        self.vid.set(cv.CAP_PROP_POS_FRAMES, self.num_frame-1)
-        ret, _ = self.vid.read()
-        while not ret:
-            print(f'ROI_image_stream : Can not read the frame from the last position. Decreasing the total frame count')
-            self.num_frame -= 1
-            self.vid.set(cv.CAP_PROP_POS_FRAMES, self.num_frame)
-            ret, _ = self.vid.read()
 
         # ROI size
         self.ROI_size = ROI_size
@@ -72,6 +39,7 @@ class ROI_image_stream():
         self.stableBackground = stableBackground
 
         # BlobDetector
+        # TODO : automatically find the best parameter
         parameter = cv.SimpleBlobDetector_Params()
         parameter.filterByArea = True
         parameter.filterByConvexity = True
@@ -103,7 +71,7 @@ class ROI_image_stream():
         else:
             self.global_mask = 255 * np.ones(self.frame_size, dtype=np.uint8)
 
-    def trainBackgroundSubtractor(self):
+    def trainBackgroundSubtractor(self, num_frames2use = 200):
         """
         trainBackgroundSubtractor : train BackgroundSubtractorKNN for initial movement detection
         ----------------------------------------------------------------------------------------
@@ -121,23 +89,23 @@ class ROI_image_stream():
         self.backSub.setNMixtures(3) #default : 5 : 30
         self.backSub.setHistory(20) # default : 500 : 100
         self.backSub.setVarThreshold(50) # default : 16 : 50
-
         self.backSub.setDetectShadows(False)
 
-        numModelFrame = 200
+        # Store Multiple Frames for further processing
+        storeFrame = np.zeros((self.frame_size[0], self.frame_size[1], 3, num_frame2use), dtype=np.uint8)
 
-        storeFrame = np.zeros((self.frame_size[0], self.frame_size[1], 3, numModelFrame), dtype=np.uint8)
-
-        stride = np.ceil(self.num_frame / numModelFrame) # use 200 frames to build the background model
+        stride = np.ceil(self.num_frame / num_frame2use)
 
         print('ROI_image_stream : Frame analysis...')
-        for i, frame in enumerate(tqdm(np.arange(self.num_frame-1, 0, -1 * stride))): # obtain image backward
+        for i, frame in enumerate(tqdm(np.arange(0, self.num_frame-1, stride))): 
             image = self.getFrame(frame)
             if image is None:
                 break
             else:
                 image = cv.bitwise_and(image, image, mask=self.global_mask)
                 storeFrame[:,:,:,i] = image
+
+        # Extract median image + background distribution
 
         print('ROI_image_stream : Foreground Model building...')
         #imageMedian = np.median(storeFrame,axis=3).astype(np.uint8)
@@ -158,6 +126,7 @@ class ROI_image_stream():
 
         print('ROI_image_stream : Training Backgroundsubtractor...')
         self.backSub.apply(imageMedian,learningRate=1)
+        # TODO : train image backward! (reversed)
         if not self.stableBackground:
             for i in np.arange(numModelFrame):
                 self.backSub.apply(storeFrame[:,:,:,i], learningRate=0.01)
@@ -174,11 +143,10 @@ class ROI_image_stream():
         ----------------------------------------------------------------
         returns frame 
         """
-        self.vid.set(cv.CAP_PROP_POS_FRAMES, frame_number)
-        ret, image = self.vid.read()
+        self.vc.set(cv.CAP_PROP_POS_FRAMES, frame_number)
+        ret, image = self.vc.read()
         #image correction can be applied. but this slows the process a lot.
-        #image = np.clip(((self.alpha * image + self.beta) / 255) ** self.gamma * 255, 0, 255).astype(np.uint8)
-
+        #ex) image = np.clip(((self.alpha * image + self.beta) / 255) ** self.gamma * 255, 0, 255).astype(np.uint8)
         if not ret:
             raise(BaseException(f'ROI_image_stream : Can not retrieve frame # {frame_number}'))
         return image
@@ -207,11 +175,11 @@ class ROI_image_stream():
         # Video IO Thread and Queue
         self.frameQ = Queue(maxsize=200)
         self.frame_number_array = frame_number_array
-        self.vidIOthread = Thread(target=self.__readVideo, args=())
-        self.vidIOthread.daemon = True # indicate helper thread
+        self.vcIOthread = Thread(target=self.__readVideo, args=())
+        self.vcIOthread.daemon = True # indicate helper thread
         self.frame_number_array_idx = 0
-        if not self.vidIOthread.isAlive():
-            self.vidIOthread.start()
+        if not self.vcIOthread.isAlive():
+            self.vcIOthread.start()
 
         # ROI detection Thread and Queue
         self.blobQ = Queue(maxsize=200)
@@ -220,6 +188,44 @@ class ROI_image_stream():
         self.roiDetectionThread.start()
 
         self.isMultithreading = True
+
+    def __getFrameSize(self, vc)
+        """
+        __getFrameSize : get frame size from the VideoCapture object.
+            I can not trust vid.get(cv.CAP_PROP_FRAME_COUNT), because sometime I can't retrieve the last frame with vid.read()
+        """
+        num_frame = int(self.vc.get(cv.CAP_PROP_FRAME_COUNT))
+        self.vc.set(cv.CAP_PROP_POS_FRAMES, self.num_frame-1)
+        ret, _ = self.vc.read()
+        while not ret:
+            print(f'ROI_image_stream : Can not read the frame from the last position. Decreasing the total frame count')
+            num_frame -= 1
+            self.vc.set(cv.CAP_PROP_POS_FRAMES, self.num_frame)
+            ret, _ = self.vc.read()
+        return num_frame
+
+    def __readVideoPath(self, path_data)
+    """
+    parse the path of the video. if not found or multiple files are found, evoke an error
+    """
+        if path_data.is_file():
+            if path_data.suffix in ['.mkv', '.avi', '.mp4']: # path is video.mkv
+                return path_data
+            else:
+                raise(BaseException(f'ROI_image_stream : Following file is not a supported video type : {path_data.suffix}'))
+        elif path_data.is_dir():
+            vidlist = []
+            vidlist.extend([i for i in path_data.glob('*.mkv')])
+            vidlist.extend([i for i in path_data.glob('*.avi')])
+            vidlist.extend([i for i in path_data.glob('*.mp4')])
+            if len(vidlist) == 0:
+                raise(BaseException(f'ROI_image_stream : Can not find video in {path_data}'))
+            elif len(vidlist) > 1:
+                raise(BaseException(f'ROI_image_stream : Multiple video files found in {path_data}'))
+            else:
+                return vidlist[0]
+        else:
+            raise(BaseException(f'ROI_image_stream : Can not find video file in {path_data}'))
 
     def __readVideo(self):
         """
@@ -244,7 +250,7 @@ class ROI_image_stream():
         """
         print('ROI_image_stream : ROI extraction Thread started\n')
         # run until frameQ is empty and thread is dead 
-        while not(self.frameQ.empty()) or self.vidIOthread.isAlive():
+        while not(self.frameQ.empty()) or self.vcIOthread.isAlive():
             if not self.blobQ.full():
                 frame_number, image = self.frameQ.get()
                 detected_blob = self.__findBlob(image)
