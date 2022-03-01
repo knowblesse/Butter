@@ -55,8 +55,8 @@ class VideoProcessor:
 
         # Print Video Info
         self.process_fps = process_fps
-        self.num_frame = int(self.istream.vid.get(cv.CAP_PROP_FRAME_COUNT))
-        self.fps = self.istream.vid.get(cv.CAP_PROP_FPS)
+        self.num_frame = self.istream.getFrameCount()
+        self.fps = self.istream.getFPS()
         time_sec = self.num_frame / self.fps
         print(f"VideoProcessor : Video Info : {self.num_frame:05d}frames : {int(np.floor(time_sec/60)):d} m {int(np.remainder(time_sec,60)):d} s")
 

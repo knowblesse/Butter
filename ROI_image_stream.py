@@ -21,7 +21,7 @@ class ROI_image_stream():
         self.path_video = self.__readVideoPath(path_data)
         self.vc = cv.VideoCapture(str(self.path_video))
         self.frame_size = (int(self.vc.get(cv.CAP_PROP_FRAME_HEIGHT)), int(self.vc.get(cv.CAP_PROP_FRAME_WIDTH)))
-        self.num_frame = self.__getFrameSize(self.vc)
+        self.num_frame = self.getFrameCount()
 
         # stream status 
         self.isBackgroundSubtractorTrained = False
@@ -189,25 +189,28 @@ class ROI_image_stream():
 
         self.isMultithreading = True
 
-    def __getFrameSize(self, vc)
+    def getFrameCount(self):
         """
-        __getFrameSize : get frame size from the VideoCapture object.
+        getFrameCount : get frame size from the VideoCapture object.
             I can not trust vid.get(cv.CAP_PROP_FRAME_COUNT), because sometime I can't retrieve the last frame with vid.read()
         """
         num_frame = int(self.vc.get(cv.CAP_PROP_FRAME_COUNT))
-        self.vc.set(cv.CAP_PROP_POS_FRAMES, self.num_frame-1)
+        self.vc.set(cv.CAP_PROP_POS_FRAMES, num_frame-1)
         ret, _ = self.vc.read()
         while not ret:
             print(f'ROI_image_stream : Can not read the frame from the last position. Decreasing the total frame count')
             num_frame -= 1
-            self.vc.set(cv.CAP_PROP_POS_FRAMES, self.num_frame)
+            self.vc.set(cv.CAP_PROP_POS_FRAMES, num_frame)
             ret, _ = self.vc.read()
         return num_frame
 
-    def __readVideoPath(self, path_data)
-    """
-    parse the path of the video. if not found or multiple files are found, evoke an error
-    """
+    def getFPS(self):
+        return self.vc.get(cv.CAP_PROP_FPS)
+
+    def __readVideoPath(self, path_data):
+        """
+        parse the path of the video. if not found or multiple files are found, evoke an error
+        """
         if path_data.is_file():
             if path_data.suffix in ['.mkv', '.avi', '.mp4']: # path is video.mkv
                 return path_data
