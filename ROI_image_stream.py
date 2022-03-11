@@ -1,11 +1,13 @@
 import cv2 as cv
 import numpy as np
+from scipy.stats import norm
 import matplotlib.pyplot as plt
 from pathlib import Path
 from tqdm import tqdm
 from threading import Thread
 from queue import Queue
 import time
+from collections import deque
 
 class ROI_image_stream():
     def __init__(self,path_data, ROI_size, setMask=True, stableBackground=False):
@@ -24,7 +26,7 @@ class ROI_image_stream():
         self.num_frame = self.getFrameCount()
 
         # stream status 
-        self.isBackgroundSubtractorTrained = False
+        self.isForegroundModelBuilt = False
         self.isMultithreading = False
 
         # ROI size
@@ -33,34 +35,9 @@ class ROI_image_stream():
         if ROI_size%2 != 0 :
             raise(BaseException('ROI_size is not dividable with 2!'))
 
-        # Background Subtractor Parameters
-        self.masked_image = []
-        self.backSub_lr = 0
-        self.stableBackground = stableBackground
-
-        # BlobDetector
-        # TODO : automatically find the best parameter
-        parameter = cv.SimpleBlobDetector_Params()
-        parameter.filterByArea = True
-        parameter.filterByConvexity = True
-        parameter.filterByCircularity = True
-        parameter.filterByInertia = False
-        parameter.filterByColor = False
-        parameter.minArea = 500  # this value defines the minimum size of the blob
-        parameter.maxArea = 10000  # this value defines the maximum size of the blob
-        parameter.minDistBetweenBlobs = 1
-        parameter.minConvexity = 0.3
-        parameter.minCircularity = 0.3
-        parameter.minThreshold = 253
-        parameter.maxThreshold = 255
-        parameter.thresholdStep = 1
-        self.detector = cv.SimpleBlobDetector_create(parameter)
-
-        # soft detector
-        parameter.minConvexity = 0.15
-        parameter.minCircularity = 0.15
-
-        self.detector_soft = cv.SimpleBlobDetector_create(parameter)
+        # Foreground detector
+        self.pastFrameNumber = 100
+        self.pastFrames = deque([],maxlen=self.pastFrameNumber)
 
         # Set Mask
         if setMask:
@@ -76,66 +53,63 @@ class ROI_image_stream():
         trainBackgroundSubtractor : train BackgroundSubtractorKNN for initial movement detection
         ----------------------------------------------------------------------------------------
         training the background subtractor
-        1. read (numModelFrame) number of frames across the video
-        2. store these frames
+        1. read {num_frames2use}frames across the video and store them
+        2. 
         3. use np.quantile to generate imageMedian image
         4. subtract imageMedian from stored frames
         5. remainder is the animal containing frame
-        6. calculate threshold from animal frame
-        7. get mean animal size
-        8. train background subtractor
+        6. get mean animal size
         """
-        self.backSub = cv.createBackgroundSubtractorMOG2()
-        self.backSub.setNMixtures(3) #default : 5 : 30
-        self.backSub.setHistory(20) # default : 500 : 100
-        self.backSub.setVarThreshold(50) # default : 16 : 50
-        self.backSub.setDetectShadows(False)
+        # Read and Store Multiple Frames and Extract Initial image for background model
+        print('ROI_image_stream : Initial Background Model building...')
+        frameStorage = np.zeros((self.frame_size[0], self.frame_size[1], 3, num_frames2use), dtype=np.uint8)
+        for i, frame in enumerate(tqdm(np.round(np.linspace(0, self.num_frame-1, num_frames2use)).astype(int))):
+            image = self.getFrame(frame, applyGlobalMask=True)
+            frameStorage[:,:,:,i] = image
+        self.medianFrame = np.median(frameStorage,axis=3).astype(np.uint8)
 
-        # Store Multiple Frames for further processing
-        storeFrame = np.zeros((self.frame_size[0], self.frame_size[1], 3, num_frame2use), dtype=np.uint8)
+        # Build Forground Model
+        """
+        Run though sufficient number of frames to calculate proper size and the threshold of the foreground model.
+        Later, the value computed from this psudo-foreground object will be used to detect the foreground object.
+        """
+        print('ROI_image_stream : Initial Animal Model building...')
 
-        stride = np.ceil(self.num_frame / num_frame2use)
+        animalSize = np.zeros(num_frames2use)
+        animalThreshold = np.zeros(num_frames2use)
+        animalConvexity = np.zeros(num_frames2use)
+        animalCircularity = np.zeros(num_frames2use)
 
-        print('ROI_image_stream : Frame analysis...')
-        for i, frame in enumerate(tqdm(np.arange(0, self.num_frame-1, stride))): 
-            image = self.getFrame(frame)
-            if image is None:
-                break
-            else:
-                image = cv.bitwise_and(image, image, mask=self.global_mask)
-                storeFrame[:,:,:,i] = image
+        for i in tqdm(np.arange(num_frames2use)):
+            image = cv.cvtColor(cv.absdiff(frameStorage[:,:,:,i], self.medianFrame), cv.COLOR_RGB2GRAY)
+            animalThreshold[i] = np.quantile(image, 0.99) # consider only the top 1% of the intensity as the forground object.
+            binaray_image = cv.threshold(image,animalThreshold[i], 255, cv.THRESH_BINARY)[1]
 
-        # Extract median image + background distribution
+            # Find the largest contour
+            cnts = cv.findContours(binaray_image, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)[0]
+            maxCntSize = 0
+            maxCntIndex = None
+            for j, cnt in enumerate(cnts):
+                area = cv.contourArea(cnt)
+                if area > maxCntSize:
+                    maxCntSize = area
+                    maxCntIndex = j
 
-        print('ROI_image_stream : Foreground Model building...')
-        #imageMedian = np.median(storeFrame,axis=3).astype(np.uint8)
-        imageMedian = np.quantile(storeFrame, 0.2, axis=3).astype(np.uint8)
-        self.imageMedian = imageMedian
-        animalFrame = np.zeros((self.frame_size[0], self.frame_size[1], numModelFrame), dtype=np.uint8)
-        animalSize = np.zeros(numModelFrame)
-        for i in tqdm(np.arange(numModelFrame)):
-            animalFrame[:,:,i] = cv.cvtColor(cv.subtract(storeFrame[:,:,:,i], imageMedian),cv.COLOR_RGB2GRAY)
+            # Calculate feature information from the largest contour
+            area = cv.contourArea(cnts[maxCntIndex])
+            perimeter = cv.arcLength(cnts[maxCntIndex])
+            animalSize[i] = area
+            animalConvexity[i] = area / cv.contourArea(cv.convexHull(cnts[maxCntIndex]))
+            animalCircularity[i] = 4 * np.pi * area / (perimeter ** 2)
 
-        # Calculate Threshold value
-        self.threshold = np.mean(animalFrame) + 2 * np.std(animalFrame) # 2 sigma over background as threshold
+        self.animalThreshold = np.median(animalThreshold)
+        self.animalSize = {'median', np.median(animalSize), 'sd', np.std(animalSize)}
+        self.animalConvexity = {'median', np.median(animalSize), 'sd', np.std(animalConvexity)}
+        self.animalCircularity = {'median', np.median(animalCircularity), 'sd', np.std(animalCircularity)}
 
-        for i in np.arange(numModelFrame):
-            animalSize[i] = np.sum(animalFrame[:,:,i] > self.threshold)
+        self.isForegroundModelBuilt = True
 
-        self.animalSize = np.mean(animalSize)
-
-        print('ROI_image_stream : Training Backgroundsubtractor...')
-        self.backSub.apply(imageMedian,learningRate=1)
-        # TODO : train image backward! (reversed)
-        if not self.stableBackground:
-            for i in np.arange(numModelFrame):
-                self.backSub.apply(storeFrame[:,:,:,i], learningRate=0.01)
-
-        print('ROI_image_stream : Done')
-
-        self.isBackgroundSubtractorTrained = True
-
-    def getFrame(self, frame_number):
+    def getFrame(self, frame_number, applyGlobalMask=False):
         """
         getFrame : return original frame
         ----------------------------------------------------------------
@@ -149,6 +123,8 @@ class ROI_image_stream():
         #ex) image = np.clip(((self.alpha * image + self.beta) / 255) ** self.gamma * 255, 0, 255).astype(np.uint8)
         if not ret:
             raise(BaseException(f'ROI_image_stream : Can not retrieve frame # {frame_number}'))
+        if applyGlobalMask:
+            image = cv.bitwise_and(image, image, mask=self.global_mask)
         return image
 
     def drawFrame(self, frame_number):
@@ -238,7 +214,7 @@ class ROI_image_stream():
         while True:
             if not self.frameQ.full():
                 frame_number = self.frame_number_array[self.frame_number_array_idx]
-                image = self.getFrame(frame_number)
+                image = self.getFrame(frame_number, applyGlobalMask=True)
                 self.frameQ.put((frame_number, image))
                 self.frame_number_array_idx += 1
             else:
@@ -266,50 +242,60 @@ class ROI_image_stream():
         size = int(size)
         return cv.getStructuringElement(cv.MORPH_ELLIPSE, (size, size),
                                         ((int((size - 1) / 2), int((size - 1) / 2))))
-    def __findBlob(self, image):
+    def __findBlob(self, image, sequentialCalling=False):
         """
         __findBlob: from given image, applay noise filter and find blob.
         --------------------------------------------------------------------------------
         image : 3D np.array : image to process
+        sequentialCalling : bool : if true, this function is called by time sequence. 
+            Every image called with this function is added to the self.pastFrames
         --------------------------------------------------------------------------------
         return blob array
         --------------------------------------------------------------------------------
         """
-        # Process Image
-        image = cv.bitwise_and(image, image, mask=self.global_mask)
-        
-        # Background Subtractor : adaptive learning rate adjustment
-        normal_lr = 1e-4
-        stationary_lr = 1e-6
-        stationary_criterion = self.animalSize * 1.1
+        # Add current image to the pastFrame Storage
+        if sequentialCalling:
+            self.pastFrames.append(image)
 
-        masked_image = self.backSub.apply(image, learningRate=self.backSub_lr)
-        if self.stableBackground: # if stable, don't change the background model
-            self.backSub_lr = 1e-8
-        else:
-            if (self.masked_image == []): # empty
-                self.backSub_lr = normal_lr
-            else:
-                if cv.countNonZero(cv.bitwise_and(masked_image, self.masked_image)) > stationary_criterion:
-                    self.backSub_lr = stationary_lr
-                else:
-                    self.backSub_lr = normal_lr
-        self.masked_image = masked_image
+        # Foreground Detector
+        weight_mediandiff = (0.5 + 0.5*(self.pastFrameNumber - len(self.pastFrames))/self.pastFrameNumber)
+        weight_recentdiff = 1 - weight_mediandiff
+
+        image = cv.addWeighted(
+            cv.absdiff(image, self.medianFrame), weight_mediandiff,
+            cv.absdiff(image, np.median(self.pastFrames)), weight_recentdiff)
+
+        image = cv.cvtColor(image, cv.COLOR_RGB2GRAY)
+        binaray_image = cv.threshold(image, self.animalThreshold, 255, cv.THRESH_BINARY)[1]
 
         # opening -> delete noise : erode and dilate
         # closing -> make into big object : dilate and erode
-        denoised_mask = masked_image
+        denoised_mask = binaray_image
         denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_OPEN, self.getKernel(3))
         denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_OPEN, self.getKernel(5))
         denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_CLOSE, self.getKernel(10))
         denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_OPEN, self.getKernel(7))
         denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_OPEN, self.getKernel(12))
 
-        # detect
-        detected_blob = self.detector.detect(denoised_mask)
+        # Find three largest contour
+        cnts = cv.findContours(denoised_mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)[0]
+        largestContourIndex = np.argsort(np.array([cv.contourArea(cnt) for cnt in cnts]))[-1:-4:-1]
 
-        if len(detected_blob) == 0: # if not found, try softer one
-            detected_blob = self.detector_soft.detect(denoised_mask)
+        # Calculate Feature information
+        area = np.array([cv.contourArea(cnt) for cnt in cnts[largestContourIndex]])
+        perimeter = np.array([cv.arcLength(cnt) for cnt in cnts[largestContourIndex]])
+
+        animalSize = area
+        animalConvexity = area / np.array([cv.contourArea(cv.convexHull(cnt)) for cnt in cnts[largestContourIndex]])
+        animalCircularity = 4 * np.pi * area / (perimeter ** 2)
+
+        likelihood = norm.pdf(animalSize, self.animalSize['median'], self.animalSize['sd']) *\
+                     norm.pdf(animalConvexity, self.animalConvexity['median'], self.animalConvexity['sd']) *\
+                     norm.pdf(animalCircularity, self.animalCircularity['median'], self.animalCircularity['sd'])
+        targetContourIndex = np.argmax(likelihood)
+
+        # output center
+        detected_blob = cv.minEnclosingCircle(cnts[targetContourIndex])[0]
 
         return detected_blob
 
@@ -325,11 +311,11 @@ class ROI_image_stream():
         outputFrame : 3D numpy array : ROI frame  
         center : (r,c) : location of the center of the blob
         """
-        if not self.isBackgroundSubtractorTrained:
+        if not self.isForegroundModelBuilt:
             raise(BaseException('BackgroundSubtractor is not trained'))
 
         if frame_number != -1: # frame_number is provided
-            image = self.getFrame(frame_number)
+            image = self.getFrame(frame_number, applyGlobalMask=True)
             detected_blob = self.__findBlob(image)
 
         else: # frame number is not provided
@@ -338,27 +324,11 @@ class ROI_image_stream():
                                 'If you are trying to use this function as multithreading, check if you called startROIextractionThread()'))
             frame_number, image, detected_blob = self.blobQ.get()
 
-        # Further process detected blobs
-        if len(detected_blob) == 0 :
-            raise(BlobDetectionFailureError('No Blob'))
-        elif len(detected_blob) > 1:# if multiple blob is detected, select the largest one
-            final_blob_index = 0
-            if previous_rc != []: # use previous point to select blob
-                min_blob_distance = 1000000000
-                for i, blob in enumerate(detected_blob):
-                    distance = ((previous_rc[0] - blob.pt[1])**2 +  (previous_rc[1] - blob.pt[0])**2)
-                    if min_blob_distance > distance:
-                        min_blob_distance = distance
-                        final_blob_index = i
-            else: # use size to select blob
-                max_blob_size = 0
-                for i, blob in enumerate(detected_blob):
-                    if max_blob_size < blob.size:
-                        max_blob_size = blob.size
-                        final_blob_index = i
-            detected_blob = [detected_blob[final_blob_index]]
+        # TODO now this is not a blob. rather, contours
 
-        blob_center_row, blob_center_col = int(np.round(detected_blob[0].pt[1])) , int(np.round(detected_blob[0].pt[0]))
+        # Further process detected blobs
+
+        blob_center_row, blob_center_col = int(np.round(detected_blob[1])) , int(np.round(detected_blob[0]))
 
         # Create expanded version of the original image.
         # In this way, we can prevent errors when center of the ROI is near the boarder of the image.
