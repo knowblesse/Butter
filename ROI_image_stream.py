@@ -97,15 +97,15 @@ class ROI_image_stream():
 
             # Calculate feature information from the largest contour
             area = cv.contourArea(cnts[maxCntIndex])
-            perimeter = cv.arcLength(cnts[maxCntIndex])
+            perimeter = cv.arcLength(cnts[maxCntIndex], closed=True)
             animalSize[i] = area
             animalConvexity[i] = area / cv.contourArea(cv.convexHull(cnts[maxCntIndex]))
             animalCircularity[i] = 4 * np.pi * area / (perimeter ** 2)
 
         self.animalThreshold = np.median(animalThreshold)
-        self.animalSize = {'median', np.median(animalSize), 'sd', np.std(animalSize)}
-        self.animalConvexity = {'median', np.median(animalSize), 'sd', np.std(animalConvexity)}
-        self.animalCircularity = {'median', np.median(animalCircularity), 'sd', np.std(animalCircularity)}
+        self.animalSize = {'median': np.median(animalSize), 'sd': np.std(animalSize)}
+        self.animalConvexity = {'median': np.median(animalSize), 'sd': np.std(animalConvexity)}
+        self.animalCircularity = {'median': np.median(animalCircularity), 'sd': np.std(animalCircularity)}
 
         self.isForegroundModelBuilt = True
 
@@ -242,7 +242,7 @@ class ROI_image_stream():
         size = int(size)
         return cv.getStructuringElement(cv.MORPH_ELLIPSE, (size, size),
                                         ((int((size - 1) / 2), int((size - 1) / 2))))
-    def __findBlob(self, image, sequentialCalling=False):
+    def __findBlob(self, image, maxBlob = 3, sequentialCalling=False):
         """
         __findBlob: from given image, applay noise filter and find blob.
         --------------------------------------------------------------------------------
@@ -261,9 +261,13 @@ class ROI_image_stream():
         weight_mediandiff = (0.5 + 0.5*(self.pastFrameNumber - len(self.pastFrames))/self.pastFrameNumber)
         weight_recentdiff = 1 - weight_mediandiff
 
-        image = cv.addWeighted(
-            cv.absdiff(image, self.medianFrame), weight_mediandiff,
-            cv.absdiff(image, np.median(self.pastFrames)), weight_recentdiff)
+        if weight_recentdiff == 0 :
+            image = cv.absdiff(image, self.medianFrame)
+        else:
+            image = cv.addWeighted(
+                cv.absdiff(image, self.medianFrame), weight_mediandiff,
+                cv.absdiff(image, np.median(self.pastFrames)), weight_recentdiff,
+                0)
 
         image = cv.cvtColor(image, cv.COLOR_RGB2GRAY)
         binaray_image = cv.threshold(image, self.animalThreshold, 255, cv.THRESH_BINARY)[1]
@@ -279,25 +283,32 @@ class ROI_image_stream():
 
         # Find three largest contour
         cnts = cv.findContours(denoised_mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)[0]
-        largestContourIndex = np.argsort(np.array([cv.contourArea(cnt) for cnt in cnts]))[-1:-4:-1]
+        largestContourIndex = np.argsort(np.array([cv.contourArea(cnt) for cnt in cnts]))[-1:(-1-maxBlob):-1]
+        largeestContours = [cnts[i] for i in largestContourIndex]
 
         # Calculate Feature information
-        area = np.array([cv.contourArea(cnt) for cnt in cnts[largestContourIndex]])
-        perimeter = np.array([cv.arcLength(cnt) for cnt in cnts[largestContourIndex]])
+        area = np.array([cv.contourArea(cnt) for cnt in largeestContours])
+        perimeter = np.array([cv.arcLength(cnt, closed=True) for cnt in largeestContours])
 
         animalSize = area
-        animalConvexity = area / np.array([cv.contourArea(cv.convexHull(cnt)) for cnt in cnts[largestContourIndex]])
+        # TODO : animalConvexitiy['median'] has weird value?
+        animalConvexity = area / np.array([cv.contourArea(cv.convexHull(cnt)) for cnt in largeestContours])
         animalCircularity = 4 * np.pi * area / (perimeter ** 2)
 
-        likelihood = norm.pdf(animalSize, self.animalSize['median'], self.animalSize['sd']) *\
-                     norm.pdf(animalConvexity, self.animalConvexity['median'], self.animalConvexity['sd']) *\
-                     norm.pdf(animalCircularity, self.animalCircularity['median'], self.animalCircularity['sd'])
-        targetContourIndex = np.argmax(likelihood)
+        likelihood = np.log(norm.pdf(animalSize, self.animalSize['median'], self.animalSize['sd'])) +\
+                     np.log(norm.pdf(animalConvexity, self.animalConvexity['median'], self.animalConvexity['sd'])) +\
+                     np.log(norm.pdf(animalCircularity, self.animalCircularity['median'], self.animalCircularity['sd']))
 
         # output center
-        detected_blob = cv.minEnclosingCircle(cnts[targetContourIndex])[0]
+        detected_blob = [() for l, likelihood in likelihood]
 
         return detected_blob
+
+    def drawROI(self, frame_number):
+        img = self.getFrame(frame_number)
+        ROIcenter = self.getROIImage(frame_number)[1]
+        cv.rectangle(img, [ROIcenter[0]-self.half_ROI_size, ROIcenter[1]-self.half_ROI_size], [ROIcenter[0]+self.half_ROI_size, ROIcenter[1]+self.half_ROI_size])
+        return img
 
     def getROIImage(self, frame_number=-1, previous_rc = []):
         """
