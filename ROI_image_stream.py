@@ -48,32 +48,26 @@ class ROI_image_stream():
         else:
             self.global_mask = 255 * np.ones(self.frame_size, dtype=np.uint8)
 
-    def trainBackgroundSubtractor(self, num_frames2use = 200):
+    def buildForegroundModel(self, num_frames2use = 200):
         """
-        trainBackgroundSubtractor : train BackgroundSubtractorKNN for initial movement detection
+        buildForegroundModel : build a foreground model for initial movement detection
         ----------------------------------------------------------------------------------------
-        training the background subtractor
-        1. read {num_frames2use}frames across the video and store them
-        2. 
-        3. use np.quantile to generate imageMedian image
-        4. subtract imageMedian from stored frames
-        5. remainder is the animal containing frame
-        6. get mean animal size
+        num_frames2use : int : number of frames to use for building the foreground model
         """
         # Read and Store Multiple Frames and Extract Initial image for background model
-        print('ROI_image_stream : Initial Background Model building...')
+        print('ROI_image_stream : Acquiring frames to analyze')
         frameStorage = np.zeros((self.frame_size[0], self.frame_size[1], 3, num_frames2use), dtype=np.uint8)
         for i, frame in enumerate(tqdm(np.round(np.linspace(0, self.num_frame-1, num_frames2use)).astype(int))):
             image = self.getFrame(frame, applyGlobalMask=True)
             frameStorage[:,:,:,i] = image
         self.medianFrame = np.median(frameStorage,axis=3).astype(np.uint8)
 
-        # Build Forground Model
+        # Build a foreground Model
         """
-        Run though sufficient number of frames to calculate proper size and the threshold of the foreground model.
+        Run through sufficient number of frames to calculate proper size and the threshold of the foreground model.
         Later, the value computed from this psudo-foreground object will be used to detect the foreground object.
         """
-        print('ROI_image_stream : Initial Animal Model building...')
+        print('ROI_image_stream : Initial Foreground Model building...')
 
         animalSize = np.zeros(num_frames2use)
         animalThreshold = np.zeros(num_frames2use)
@@ -104,7 +98,7 @@ class ROI_image_stream():
 
         self.animalThreshold = np.median(animalThreshold)
         self.animalSize = {'median': np.median(animalSize), 'sd': np.std(animalSize)}
-        self.animalConvexity = {'median': np.median(animalSize), 'sd': np.std(animalConvexity)}
+        self.animalConvexity = {'median': np.median(animalConvexity), 'sd': np.std(animalConvexity)}
         self.animalCircularity = {'median': np.median(animalCircularity), 'sd': np.std(animalCircularity)}
 
         self.isForegroundModelBuilt = True
@@ -119,8 +113,6 @@ class ROI_image_stream():
         """
         self.vc.set(cv.CAP_PROP_POS_FRAMES, frame_number)
         ret, image = self.vc.read()
-        #image correction can be applied. but this slows the process a lot.
-        #ex) image = np.clip(((self.alpha * image + self.beta) / 255) ** self.gamma * 255, 0, 255).astype(np.uint8)
         if not ret:
             raise(BaseException(f'ROI_image_stream : Can not retrieve frame # {frame_number}'))
         if applyGlobalMask:
@@ -144,7 +136,7 @@ class ROI_image_stream():
         """
         startROIextractionThread : start ROI extraction Thread for continuous processing.
             When called, two thread (video read and opencv ROI detection) is initiated.
-            Processed ROI is stored in self.roiDetectionQ 
+            Processed ROI is stored in self.blobQ
         --------------------------------------------------------------------------------
         frame_number_array : 1D array : frame numbers to process
         """
@@ -174,7 +166,6 @@ class ROI_image_stream():
         self.vc.set(cv.CAP_PROP_POS_FRAMES, num_frame-1)
         ret, _ = self.vc.read()
         while not ret:
-            print(f'ROI_image_stream : Can not read the frame from the last position. Decreasing the total frame count')
             num_frame -= 1
             self.vc.set(cv.CAP_PROP_POS_FRAMES, num_frame)
             ret, _ = self.vc.read()
@@ -219,6 +210,7 @@ class ROI_image_stream():
                 self.frame_number_array_idx += 1
             else:
                 time.sleep(0.1)
+            # Check if all frames are added.
             if self.frame_number_array_idx >= self.frame_number_array.shape[0]:
                 break
         print('ROI_image_stream : Video IO Thread stopped\n')
@@ -232,8 +224,8 @@ class ROI_image_stream():
         while not(self.frameQ.empty()) or self.vcIOthread.isAlive():
             if not self.blobQ.full():
                 frame_number, image = self.frameQ.get()
-                detected_blob = self.__findBlob(image)
-                self.blobQ.put((frame_number, image, detected_blob))
+                detected_blobs = self.__findBlob(image)
+                self.blobQ.put((frame_number, image, detected_blobs))
             else:
                 time.sleep(0.1)
         print('ROI_image_stream : ROI extraction Thread stopped\n')
@@ -244,16 +236,17 @@ class ROI_image_stream():
                                         ((int((size - 1) / 2), int((size - 1) / 2))))
     def __findBlob(self, image, maxBlob = 3, sequentialCalling=False):
         """
-        __findBlob: from given image, applay noise filter and find blob.
+        __findBlob: from given image, apply noise filter and find blob.
         --------------------------------------------------------------------------------
         image : 3D np.array : image to process
-        sequentialCalling : bool : if true, this function is called by time sequence. 
+        maxBlob : int : maximum number of blobs to return 
+        sequentialCalling : bool : set true if this function is called sequentially through time.
             Every image called with this function is added to the self.pastFrames
         --------------------------------------------------------------------------------
-        return blob array
+        return list of blobs
         --------------------------------------------------------------------------------
         """
-        # Add current image to the pastFrame Storage
+        # Add current image to the pastFrames Storage
         if sequentialCalling:
             self.pastFrames.append(image)
 
@@ -281,28 +274,28 @@ class ROI_image_stream():
         denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_OPEN, self.getKernel(7))
         denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_OPEN, self.getKernel(12))
 
-        # Find three largest contour
+        # Find the largest contour
         cnts = cv.findContours(denoised_mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)[0]
         largestContourIndex = np.argsort(np.array([cv.contourArea(cnt) for cnt in cnts]))[-1:(-1-maxBlob):-1]
-        largeestContours = [cnts[i] for i in largestContourIndex]
+        largestContours = [cnts[i] for i in largestContourIndex]
 
         # Calculate Feature information
         area = np.array([cv.contourArea(cnt) for cnt in largeestContours])
         perimeter = np.array([cv.arcLength(cnt, closed=True) for cnt in largeestContours])
 
         animalSize = area
-        # TODO : animalConvexitiy['median'] has weird value?
         animalConvexity = area / np.array([cv.contourArea(cv.convexHull(cnt)) for cnt in largeestContours])
         animalCircularity = 4 * np.pi * area / (perimeter ** 2)
 
-        likelihood = np.log(norm.pdf(animalSize, self.animalSize['median'], self.animalSize['sd'])) +\
+        likelihoods = np.log(norm.pdf(animalSize, self.animalSize['median'], self.animalSize['sd'])) +\
                      np.log(norm.pdf(animalConvexity, self.animalConvexity['median'], self.animalConvexity['sd'])) +\
                      np.log(norm.pdf(animalCircularity, self.animalCircularity['median'], self.animalCircularity['sd']))
 
         # output center
-        detected_blob = [() for l, likelihood in likelihood]
+        detected_blobs = [(cv.minEnclosingCircle(cnt)[0], likelihood) for cnt, likelihood in zip(largestContours,likelihoods)]
+        
 
-        return detected_blob
+        return detected_blobs
 
     def drawROI(self, frame_number):
         img = self.getFrame(frame_number)
