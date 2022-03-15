@@ -375,13 +375,11 @@ class BlobDetectionFailureError(Exception):
     """Error class for blob detection"""
 
 def vector2degree(r1,c1,r2,c2):
+    # diagonal line
     l = ((r1 - r2) ** 2 + (c1 - c2) ** 2) ** 0.5
-    if r1 < r2: # 0 ~180
-        return np.rad2deg(np.arccos((c2-c1) / l))
-    elif r1 > r2: # 180 ~ 360
-        return 360 - np.rad2deg(np.arccos((c2 - c1) / l))
-    else:
-        if c2 > c1:
-            return 0
-        else:
-            return 180
+    # temporal degree value
+    temp_deg = np.rad2deg(np.arccos((c2 - c1) / l))
+    # if r1 <= r2, then [0, 180) degree = temp_deg
+    # if r1 > r2, then [180. 360) degree = 360 - temp_deg
+    deg = 360 * np.array(r1 > r2, dtype=int) + (np.array(r1 <= r2, dtype=int) - np.array(r1 > r2, dtype=int)) * temp_deg
+    return deg

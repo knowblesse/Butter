@@ -1,4 +1,30 @@
 ****************************************************************
+22MAR16
+**************************************************************** 
+* New ROI extractor
+    - Before, foreground objects were extracted using the backgroundSubtractorMOG2.
+    - However, this blackbox algorithm fails when 
+        1) animal stays in a same area for a long time, 
+        2) the algorithm detect the wrong object from the beginning
+    - So, I designed a new backgroundSubtractor algorithm using a simple median frames.
+        This algorithm performs worse than the backgroundSubtractorMOG2, but since I started 
+        to use a stronger animal contour detection algorithm, this does not cause problems.
+    - New animal contour detection algorithm added. 
+        Initially, the animal model is built using size, circularity, convexity. After applying the
+        background subtractor algorithm, the likelihood of all contours are calculated, and the
+        contour with the highest likelihood is selected as a animal.
+        Right now, this contour does not care about the previous location, but adding this
+        information will dramatically increase the detection accuracy.
+* Batch Prediction
+    - Predicting a single dataset using a CNN is extremely inefficient. I implemented batch
+        prediction and this increased the speed by x3.7. 
+    - However, if the size of the batch is too large, the GPU's memory runs out. An automatic bath size
+        selection algorithm might help. But I'll do this later ;P
+* TODO
+    - save wrong frame as dataset (ReLabeler)
+    - Location parsing
+
+****************************************************************
 21OCT15
 **************************************************************** 
 * New Model

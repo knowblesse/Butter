@@ -40,6 +40,9 @@ class VideoProcessor:
         self.isStartPositionChecked = False
         self.isProcessed = False
 
+        # Batch Size
+        self.predictBatchSize = 128
+
         # Load Model
         try:
             model = keras.models.load_model(str(model_path))
@@ -101,20 +104,34 @@ class VideoProcessor:
 
         # set for multiprocessing. reading frame automatically starts from this function
         self.istream.startROIextractionThread(np.arange(self.start_frame, self.num_frame, self.process_fps))
-        coor = []
-        for i, idx in enumerate(tqdm(np.arange(self.start_frame, self.num_frame, self.process_fps))):
+
+        batch_idx = np.empty(0, dtype=int)
+        batch_frameNumber = np.empty((0,1), dtype=int)
+        batch_image = np.empty((0, self.ROI_size, self.ROI_size, 3), dtype=np.uint8)
+        batch_coor = np.empty((0,2), dtype=int)
+
+        for idx, frameNumber in enumerate(tqdm(np.arange(self.start_frame, self.num_frame, self.process_fps))):
             try:
-                chosen_image, coor = self.istream.getROIImage(previous_rc=coor)
-                testing = tf.keras.applications.mobilenet_v2.preprocess_input(np.expand_dims(chosen_image,0))
-                result = self.model.predict(testing)
-                self.output_data[i, :] = [idx,
-                                          coor[0] + result[0,0] - int(self.ROI_size/2),
-                                          coor[1] + result[0,1] - int(self.ROI_size/2),
-                                          vector2degree(result[0,0], result[0,1], result[0,2], result[0,3])]
+                chosen_image, coor = self.istream.getROIImage()
+                batch_idx = np.concatenate((batch_idx, [idx]), axis=0)
+                batch_frameNumber = np.concatenate((batch_frameNumber, np.expand_dims([frameNumber], 0)), axis=0)
+                batch_image = np.concatenate((batch_image, np.expand_dims(chosen_image, 0)), axis=0)
+                batch_coor = np.concatenate((batch_coor, np.expand_dims(coor, 0)), axis=0)
             except BlobDetectionFailureError:
                 cumerror += 1
-                print(f'VideoProcessor : Couldn\'t find the ROI in Frame {idx}. Total {cumerror}')
-                self.output_data[i,:] = [idx, -1, -1, -1]
+                print(f'VideoProcessor : Couldn\'t find the ROI in Frame {frameNumber}. Total {cumerror}')
+                self.output_data[idx,:] = [frameNumber, -1, -1, -1]
+
+            # Predict the batch
+            if batch_image.shape[0] >= self.predictBatchSize:
+                testing = tf.keras.applications.mobilenet_v2.preprocess_input(batch_image)
+                result = self.model.predict(testing)
+                self.output_data[batch_idx,:] = np.concatenate((batch_frameNumber, batch_coor + result[:,:2] - int(self.ROI_size/2), np.expand_dims(vector2degree(result[:,0], result[:,1], result[:,2], result[:,3]),1)), axis=1)
+                batch_idx = np.empty(0, dtype=int)
+                batch_frameNumber = np.empty((0, 1), dtype=int)
+                batch_image = np.empty((0, self.ROI_size, self.ROI_size, 3), dtype=np.uint8)
+                batch_coor = np.empty((0, 2), dtype=int)
+
         self.isProcessed = True
 
     def save(self, save_path=''):
@@ -159,8 +176,8 @@ class VideoProcessor:
         else:
             frames = np.random.permutation(self.output_data[:,0])[0:num_frame_to_check]
         for frame in frames:
-            self.istream.vid.set(cv.CAP_PROP_POS_FRAMES,frame)
-            ret, img = self.istream.vid.read()
+            self.istream.vc.set(cv.CAP_PROP_POS_FRAMES,frame)
+            ret, img = self.istream.vc.read()
             if not ret:
                 raise(BaseException(f'VideoProcessor : Can not retrieve frame # {frame}'))
             idx = np.where(self.output_data[:,0] == frame)[0]
