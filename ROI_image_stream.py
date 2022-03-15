@@ -61,6 +61,7 @@ class ROI_image_stream():
             image = self.getFrame(frame, applyGlobalMask=True)
             frameStorage[:,:,:,i] = image
         self.medianFrame = np.median(frameStorage,axis=3).astype(np.uint8)
+        self.foregroundModel = frameStorage
 
         # Build a foreground Model
         """
@@ -77,10 +78,10 @@ class ROI_image_stream():
         for i in tqdm(np.arange(num_frames2use)):
             image = cv.cvtColor(cv.absdiff(frameStorage[:,:,:,i], self.medianFrame), cv.COLOR_RGB2GRAY)
             animalThreshold[i] = np.quantile(image, 0.99) # consider only the top 1% of the intensity as the forground object.
-            binaray_image = cv.threshold(image,animalThreshold[i], 255, cv.THRESH_BINARY)[1]
+            binary_image = cv.threshold(image,animalThreshold[i], 255, cv.THRESH_BINARY)[1]
 
             # Find the largest contour
-            cnts = cv.findContours(binaray_image, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)[0]
+            cnts = cv.findContours(binary_image, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)[0]
             maxCntSize = 0
             maxCntIndex = None
             for j, cnt in enumerate(cnts):
@@ -88,6 +89,8 @@ class ROI_image_stream():
                 if area > maxCntSize:
                     maxCntSize = area
                     maxCntIndex = j
+            # Draw contours to the initial foreground model
+            self.foregroundModel[:,:,:,i] = cv.drawContours(self.foregroundModel[:,:,:,i].astype(np.uint8), cnts, maxCntIndex, (255,0,0))
 
             # Calculate feature information from the largest contour
             area = cv.contourArea(cnts[maxCntIndex])
@@ -263,11 +266,11 @@ class ROI_image_stream():
                 0)
 
         image = cv.cvtColor(image, cv.COLOR_RGB2GRAY)
-        binaray_image = cv.threshold(image, self.animalThreshold, 255, cv.THRESH_BINARY)[1]
+        binary_image = cv.threshold(image, self.animalThreshold, 255, cv.THRESH_BINARY)[1]
 
         # opening -> delete noise : erode and dilate
         # closing -> make into big object : dilate and erode
-        denoised_mask = binaray_image
+        denoised_mask = binary_image
         denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_OPEN, self.getKernel(3))
         denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_OPEN, self.getKernel(5))
         denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_CLOSE, self.getKernel(10))
@@ -280,30 +283,36 @@ class ROI_image_stream():
         largestContours = [cnts[i] for i in largestContourIndex]
 
         # Calculate Feature information
-        area = np.array([cv.contourArea(cnt) for cnt in largeestContours])
-        perimeter = np.array([cv.arcLength(cnt, closed=True) for cnt in largeestContours])
+        area = np.array([cv.contourArea(cnt) for cnt in largestContours])
+        perimeter = np.array([cv.arcLength(cnt, closed=True) for cnt in largestContours])
 
         animalSize = area
-        animalConvexity = area / np.array([cv.contourArea(cv.convexHull(cnt)) for cnt in largeestContours])
+        animalConvexity = area / np.array([cv.contourArea(cv.convexHull(cnt)) for cnt in largestContours])
         animalCircularity = 4 * np.pi * area / (perimeter ** 2)
 
-        likelihoods = np.log(norm.pdf(animalSize, self.animalSize['median'], self.animalSize['sd'])) +\
-                     np.log(norm.pdf(animalConvexity, self.animalConvexity['median'], self.animalConvexity['sd'])) +\
-                     np.log(norm.pdf(animalCircularity, self.animalCircularity['median'], self.animalCircularity['sd']))
+        likelihoods = \
+            np.log(\
+                norm.cdf(animalSize + self.animalSize['sd'] * 0.1, self.animalSize['median'], self.animalSize['sd']) -\
+                norm.cdf(animalSize - self.animalSize['sd'] * 0.1, self.animalSize['median'], self.animalSize['sd'])) +\
+            np.log(\
+                norm.cdf(animalConvexity + self.animalConvexity['sd'] * 0.1, self.animalConvexity['median'], self.animalConvexity['sd']) -\
+                norm.cdf(animalConvexity - self.animalConvexity['sd'] * 0.1, self.animalConvexity['median'], self.animalConvexity['sd'])) +\
+            np.log(\
+                norm.cdf(animalCircularity + self.animalCircularity['sd'] * 0.1, self.animalCircularity['median'], self.animalCircularity['sd']) -\
+                norm.cdf(animalCircularity - self.animalCircularity['sd'] * 0.1, self.animalCircularity['median'], self.animalCircularity['sd']))\
 
         # output center
-        detected_blobs = [(cv.minEnclosingCircle(cnt)[0], likelihood) for cnt, likelihood in zip(largestContours,likelihoods)]
-        
+        detected_blobs = [{'pt':np.round(cv.minEnclosingCircle(cnt)[0]).astype(int), 'likelihood': likelihood} for cnt, likelihood in zip(largestContours,likelihoods)]
 
         return detected_blobs
 
     def drawROI(self, frame_number):
         img = self.getFrame(frame_number)
         ROIcenter = self.getROIImage(frame_number)[1]
-        cv.rectangle(img, [ROIcenter[0]-self.half_ROI_size, ROIcenter[1]-self.half_ROI_size], [ROIcenter[0]+self.half_ROI_size, ROIcenter[1]+self.half_ROI_size])
+        cv.rectangle(img, [ROIcenter[1]-self.half_ROI_size, ROIcenter[0]-self.half_ROI_size], [ROIcenter[1]+self.half_ROI_size, ROIcenter[0]+self.half_ROI_size])
         return img
 
-    def getROIImage(self, frame_number=-1, previous_rc = []):
+    def getROIImage(self, frame_number=-1, previous_rc = None):
         """
         extractROIImage : return ROI frame from the video
             frame_number can be omitted if the class uses multithreading.
@@ -320,19 +329,21 @@ class ROI_image_stream():
 
         if frame_number != -1: # frame_number is provided
             image = self.getFrame(frame_number, applyGlobalMask=True)
-            detected_blob = self.__findBlob(image)
+            detected_blobs = self.__findBlob(image)
 
         else: # frame number is not provided
             if not self.isMultithreading: # if multithreading is not used
                 raise(TypeError('getROIImage() missing 1 required positional argument: \'frame_number\'\n'
                                 'If you are trying to use this function as multithreading, check if you called startROIextractionThread()'))
-            frame_number, image, detected_blob = self.blobQ.get()
-
-        # TODO now this is not a blob. rather, contours
+            frame_number, image, detected_blobs = self.blobQ.get()
 
         # Further process detected blobs
+        # if not (previous_rc is None):
+        #     print('use nearest point')
+        detected_blob = detected_blobs[np.argmax([blob['likelihood'] for blob in detected_blobs])]
 
-        blob_center_row, blob_center_col = int(np.round(detected_blob[1])) , int(np.round(detected_blob[0]))
+        blob_center_row = detected_blob['pt'][1]
+        blob_center_col = detected_blob['pt'][0]
 
         # Create expanded version of the original image.
         # In this way, we can prevent errors when center of the ROI is near the boarder of the image.
