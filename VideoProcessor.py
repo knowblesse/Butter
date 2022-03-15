@@ -60,8 +60,8 @@ class VideoProcessor:
         time_sec = self.num_frame / self.fps
         print(f"VideoProcessor : Video Info : {self.num_frame:05d}frames : {int(np.floor(time_sec/60)):d} m {int(np.remainder(time_sec,60)):d} s")
 
-    def trainBackgroundSubtractor(self):
-        self.istream.trainBackgroundSubtractor()
+    def buildForegroundModel(self):
+        self.istream.buildForegroundModel()
 
     def checkStartPosition(self):
         """

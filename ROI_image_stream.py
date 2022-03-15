@@ -78,10 +78,10 @@ class ROI_image_stream():
         for i in tqdm(np.arange(num_frames2use)):
             image = cv.cvtColor(cv.absdiff(frameStorage[:,:,:,i], self.medianFrame), cv.COLOR_RGB2GRAY)
             animalThreshold[i] = np.quantile(image, 0.99) # consider only the top 1% of the intensity as the forground object.
-            binary_image = cv.threshold(image,animalThreshold[i], 255, cv.THRESH_BINARY)[1]
-
+            binaryImage = cv.threshold(image,animalThreshold[i], 255, cv.THRESH_BINARY)[1]
+            denoisedBinaryImage = self.__denoiseBinaryImage(binaryImage)
             # Find the largest contour
-            cnts = cv.findContours(binary_image, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)[0]
+            cnts = cv.findContours(denoisedBinaryImage, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)[0]
             maxCntSize = 0
             maxCntIndex = None
             for j, cnt in enumerate(cnts):
@@ -266,19 +266,12 @@ class ROI_image_stream():
                 0)
 
         image = cv.cvtColor(image, cv.COLOR_RGB2GRAY)
-        binary_image = cv.threshold(image, self.animalThreshold, 255, cv.THRESH_BINARY)[1]
+        binaryImage = cv.threshold(image, self.animalThreshold, 255, cv.THRESH_BINARY)[1]
 
-        # opening -> delete noise : erode and dilate
-        # closing -> make into big object : dilate and erode
-        denoised_mask = binary_image
-        denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_OPEN, self.getKernel(3))
-        denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_OPEN, self.getKernel(5))
-        denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_CLOSE, self.getKernel(10))
-        denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_OPEN, self.getKernel(7))
-        denoised_mask = cv.morphologyEx(denoised_mask, cv.MORPH_OPEN, self.getKernel(12))
+        denoisedBinaryImage = self.__denoiseBinaryImage(binaryImage)
 
         # Find the largest contour
-        cnts = cv.findContours(denoised_mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)[0]
+        cnts = cv.findContours(denoisedBinaryImage, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)[0]
         largestContourIndex = np.argsort(np.array([cv.contourArea(cnt) for cnt in cnts]))[-1:(-1-maxBlob):-1]
         largestContours = [cnts[i] for i in largestContourIndex]
 
@@ -290,16 +283,20 @@ class ROI_image_stream():
         animalConvexity = area / np.array([cv.contourArea(cv.convexHull(cnt)) for cnt in largestContours])
         animalCircularity = 4 * np.pi * area / (perimeter ** 2)
 
-        likelihoods = \
-            np.log(\
-                norm.cdf(animalSize + self.animalSize['sd'] * 0.1, self.animalSize['median'], self.animalSize['sd']) -\
-                norm.cdf(animalSize - self.animalSize['sd'] * 0.1, self.animalSize['median'], self.animalSize['sd'])) +\
-            np.log(\
-                norm.cdf(animalConvexity + self.animalConvexity['sd'] * 0.1, self.animalConvexity['median'], self.animalConvexity['sd']) -\
-                norm.cdf(animalConvexity - self.animalConvexity['sd'] * 0.1, self.animalConvexity['median'], self.animalConvexity['sd'])) +\
-            np.log(\
-                norm.cdf(animalCircularity + self.animalCircularity['sd'] * 0.1, self.animalCircularity['median'], self.animalCircularity['sd']) -\
-                norm.cdf(animalCircularity - self.animalCircularity['sd'] * 0.1, self.animalCircularity['median'], self.animalCircularity['sd']))\
+        L_Size = np.max([
+            norm.cdf(animalSize + self.animalSize['sd'] * 0.1, self.animalSize['median'], self.animalSize['sd'])
+            - norm.cdf(animalSize - self.animalSize['sd'] * 0.1, self.animalSize['median'], self.animalSize['sd']),
+            1e-10*np.ones(animalSize.shape)], axis=0)
+        L_Convexity = np.max([
+            norm.cdf(animalConvexity + self.animalConvexity['sd'] * 0.1, self.animalConvexity['median'],self.animalConvexity['sd'])
+            - norm.cdf(animalConvexity - self.animalConvexity['sd'] * 0.1, self.animalConvexity['median'],self.animalConvexity['sd']),
+            1e-10*np.ones(animalConvexity.shape)], axis=0)
+        L_Circularity = np.max([
+            norm.cdf(animalCircularity + self.animalCircularity['sd'] * 0.1, self.animalCircularity['median'],self.animalCircularity['sd'])
+            - norm.cdf(animalCircularity - self.animalCircularity['sd'] * 0.1, self.animalCircularity['median'],self.animalCircularity['sd']),
+            1e-10*np.ones(animalCircularity.shape)], axis=0)
+
+        likelihoods = np.log(L_Size) + np.log(L_Convexity) + np.log(L_Circularity)
 
         # output center
         detected_blobs = [{'pt':np.round(cv.minEnclosingCircle(cnt)[0]).astype(int), 'likelihood': likelihood} for cnt, likelihood in zip(largestContours,likelihoods)]
@@ -311,6 +308,22 @@ class ROI_image_stream():
         ROIcenter = self.getROIImage(frame_number)[1]
         cv.rectangle(img, [ROIcenter[1]-self.half_ROI_size, ROIcenter[0]-self.half_ROI_size], [ROIcenter[1]+self.half_ROI_size, ROIcenter[0]+self.half_ROI_size])
         return img
+
+    def __denoiseBinaryImage(self, binaryImage):
+        """
+        __denoiseBinaryImage : remove small artifacts from the binary Image using the cv.morphologyEx function
+        :param binaryImage: boolean image
+        :return: denoised binary image
+        """
+        # opening -> delete noise : erode and dilate
+        # closing -> make into big object : dilate and erode
+        denoisedBinaryImage = binaryImage
+        denoisedBinaryImage = cv.morphologyEx(denoisedBinaryImage, cv.MORPH_OPEN, self.getKernel(3))
+        denoisedBinaryImage = cv.morphologyEx(denoisedBinaryImage, cv.MORPH_OPEN, self.getKernel(5))
+        denoisedBinaryImage = cv.morphologyEx(denoisedBinaryImage, cv.MORPH_CLOSE, self.getKernel(10))
+        # denoisedBinaryImage = cv.morphologyEx(denoisedBinaryImage, cv.MORPH_OPEN, self.getKernel(7))
+        # denoisedBinaryImage = cv.morphologyEx(denoisedBinaryImage, cv.MORPH_OPEN, self.getKernel(12))
+        return denoisedBinaryImage
 
     def getROIImage(self, frame_number=-1, previous_rc = None):
         """
@@ -337,10 +350,11 @@ class ROI_image_stream():
                                 'If you are trying to use this function as multithreading, check if you called startROIextractionThread()'))
             frame_number, image, detected_blobs = self.blobQ.get()
 
-        # Further process detected blobs
-        # if not (previous_rc is None):
-        #     print('use nearest point')
-        detected_blob = detected_blobs[np.argmax([blob['likelihood'] for blob in detected_blobs])]
+        # Use the highest likelihood blob
+        if len(detected_blobs) == 0:
+            raise (BlobDetectionFailureError('No Blob'))
+        else:
+            detected_blob = detected_blobs[np.argmax([blob['likelihood'] for blob in detected_blobs])]
 
         blob_center_row = detected_blob['pt'][1]
         blob_center_col = detected_blob['pt'][0]
