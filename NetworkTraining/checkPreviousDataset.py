@@ -13,13 +13,13 @@ import numpy as np
 from pathlib import Path
 import re
 
-def checkPreviousDataset():
-    if Path('./Dataset/Dataset.csv').is_file(): # Dataset file exist
+def checkPreviousDataset(datasetLocation = Path('./Dataset/')):
+    if datasetLocation.is_dir(): # Dataset file exist
         # Check data number from CSV
-        dataset_csv = np.loadtxt(str(next(Path('./Dataset').glob('*.csv'))), delimiter=',')
+        dataset_csv = np.loadtxt(str(next(datasetLocation.glob('*.csv'))), delimiter=',')
 
         # Check data number from Image
-        dataset_image = [str(x.name) for x in sorted(Path('./Dataset').glob('*.png'))]
+        dataset_image = [str(x.name) for x in sorted(datasetLocation.glob('*.png'))]
 
         # Compare two size
         if len(dataset_image) < dataset_csv.shape[0]:
@@ -37,12 +37,12 @@ def checkPreviousDataset():
 
         # Delete csv log of missing image
         dataset_csv = np.delete(dataset_csv,missing_image_number,axis=0)
-        np.savetxt(Path('./Dataset/Dataset.csv'), dataset_csv, delimiter=',')
+        np.savetxt(datasetLocation/'Dataset.csv', dataset_csv, delimiter=',')
         dataset_number = dataset_csv.shape[0]
 
         # Relabel Image
-        for i, path in enumerate(sorted(Path('./Dataset').glob('*.png'))):
-            path.rename(Path(f'./Dataset/Dataset_{i:04d}.png'))
+        for i, path in enumerate(sorted(datasetLocation.glob('*.png'))):
+            path.rename(datasetLocation / Path(f'Dataset_{i:04d}.png'))
         print(f'GenerateTrainingDataset : {dataset_number} data is confirmed')
         print('    New Data will be appended to this data')
     else:

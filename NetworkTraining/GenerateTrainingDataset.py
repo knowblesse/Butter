@@ -24,7 +24,7 @@ from checkPreviousDataset import checkPreviousDataset
 ################################################################
 # Constants
 ################################################################
-new_data_folder = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21JAN2/#21JAN2-210428-195618_IL')#Path.home() / 'VCF/butter/dataset'
+new_data_folder = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21JAN2/#21JAN2-210428-195618_IL')
 base_network = 'mobilenet_v2'
 ################################################################
 # Setup
