@@ -22,4 +22,4 @@ for i, image_path in enumerate(dataset_image):
     img = cv.circle(img, (round(dataset_csv[i,2]), round(dataset_csv[i,1])), 3, [0,0,255], -1 )
     cv.line(img, (round(dataset_csv[i,2]), round(dataset_csv[i,1])), (round(dataset_csv[i,2] + 30*np.cos(np.deg2rad(dataset_csv[i,3]))), round(dataset_csv[i,1] + 30*np.sin(np.deg2rad(dataset_csv[i,3])))), [0,255,255], 2)
     cv.imwrite(str(Path(f'./Dataset/Verification/Dataset_verif_{i:03d}.png')), img)
-
+print(f'UpdateVerificationImage : Done')
