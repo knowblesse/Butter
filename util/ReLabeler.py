@@ -8,6 +8,7 @@ import numpy as np
 from NetworkTraining.checkPreviousDataset import checkPreviousDataset
 
 # Constants
+#TANK_PATH = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/20JUN1/#20JUN1-200831-110125_PL')
 TANK_PATH = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/20JUN1/#20JUN1-200827-171419_PL')
 base_network = 'mobilenet_v2'
 
@@ -127,7 +128,10 @@ def saveROIData(dataset_csv):
     c_range = [c - int(ROI_size / 2) + c_offset, c + int(ROI_size / 2) + c_offset]
 
     # Cut the image
-    ROI_image = image[r_range[0]:r_range[1], c_range[0]:c_range[1], :]
+    half_ROI_size = int(ROI_size/2)
+    expanded_image = cv.copyMakeBorder(image, half_ROI_size, half_ROI_size, half_ROI_size, half_ROI_size,
+                                       cv.BORDER_CONSTANT, value=[0, 0, 0])
+    ROI_image = expanded_image[r_range[0]+half_ROI_size:r_range[1]+half_ROI_size, c_range[0]+half_ROI_size:c_range[1]+half_ROI_size, :]
 
     cv.imwrite(str(datasetLocation/Path(f'Dataset_{dataset_csv.shape[0]:04d}.png')), ROI_image)
 
@@ -137,6 +141,7 @@ def saveROIData(dataset_csv):
     dataset_csv = np.hstack((np.expand_dims(np.arange(dataset_csv.shape[0]), 1), dataset_csv))
     np.savetxt(datasetLocation/Path('Dataset.csv'), dataset_csv, delimiter=',')
     print(f'ReLabeler : New data is appended. Now total {dataset_csv.shape[0]:d} data is in the dataset')
+    return dataset_csv
 
 while key!=ord('q'):
     cv.imshow('Main', labelObject.image)
@@ -166,7 +171,7 @@ while key!=ord('q'):
         current_label_index = foundExcursionIndex
         refreshScreen()
     elif key == ord('g'):
-        saveROIData(dataset_csv)
+        dataset_csv = saveROIData(dataset_csv)
         print('Relabeler : Saved!')
     if labelObject.isLabeled:
         try:
