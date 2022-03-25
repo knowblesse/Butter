@@ -6,10 +6,10 @@ import numpy as np
 import datetime
 
 save_interval = 300
-total_epoch = 1500
-original_epoch = 6000
+total_epoch = 3000
+original_epoch = 900
 
-model_path = Path('../Model_210911_6000epoch')
+model_path = Path('./Model_220321')
 base_network = 'mobilenet_v2'
 X_conv, y = loadDataset.loadDataset(base_network)
 new_model = keras.models.load_model(str(model_path))

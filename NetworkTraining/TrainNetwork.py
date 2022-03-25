@@ -18,14 +18,16 @@ if tf.test.is_gpu_available():
     print("TF is using GPU")
 else:
     print("TF is using CPU")
-gpu = tf.config.list_physical_devices('GPU')
-tf.config.experimental.set_memory_growth(gpu[0], True)
+gpus= tf.config.list_physical_devices('GPU')
+for gpu in gpus:
+    tf.config.experimental.set_memory_growth(gpu, True)
+
 
 ################################################################
 # Constants
 ################################################################
 base_network = 'mobilenet_v2'
-model_save_path = Path('./Model_211014_5000epoch')
+model_save_path = Path('./Model_220323')
 
 X_conv, y = loadDataset.loadDataset(base_network) # X_conv : converted to match the network input format
 
@@ -44,7 +46,7 @@ base_model.trainable = False
 ################################################################
 # Build Model - Linker model
 ################################################################
-if base_network == 'mobilenet':
+if base_network == 'mobilenet_v2':
     final_layer_ConvT = layers.Conv2DTranspose(64,kernel_size=(8,8))(base_model.get_layer('block_16_project_BN').output)
     linker_input = keras.layers.add([final_layer_ConvT, base_model.get_layer('block_9_project_BN').output])
     linker_output = keras.layers.Flatten()(linker_input)
@@ -58,20 +60,20 @@ else:
 ################################################################
 # Build Model - FC model
 ################################################################
-FC = keras.layers.Dense(200, activation='selu', name='FC_1')(linker_output)
-FC = keras.layers.Dropout(0.3, name='FC_DO')(FC)
-FC = keras.layers.Dense(150, activation='selu', name='FC_2')(FC)
+FC = keras.layers.Dense(300, activation='selu', name='FC_1')(linker_output)
+FC = keras.layers.Dropout(0.2, name='FC_DO')(FC)
+FC = keras.layers.Dense(200, activation='selu', name='FC_2')(FC)
 FC = keras.layers.Dense(4, activation='linear',name='FC_3')(FC)
 
 ################################################################
 # Compile and Train
 ################################################################
 new_model = Model(inputs=base_model.input, outputs=FC)
-new_model.compile(optimizer=keras.optimizers.SGD(learning_rate=5e-7, momentum=0.07), loss='mae', metrics='mae')
+new_model.compile(optimizer=keras.optimizers.SGD(learning_rate=1e-8, momentum=0.07), loss='mae', metrics='mae')
 #new_model.compile(optimizer=keras.optimizers.Adagrad(learning_rate=1e-4, initial_accumulator_value=0.2), loss='mae', metrics='mae')
 start_time = time.time()
-save_interval = 300
-total_epoch = 8000
+save_interval = 200
+total_epoch = 10000
 for i in np.arange(int(total_epoch/save_interval)):
     new_model.fit(X_conv,y,epochs=int(save_interval*(i+1)),initial_epoch=int(save_interval*i), validation_split=0.1,batch_size=10)
     print('Saving...')
