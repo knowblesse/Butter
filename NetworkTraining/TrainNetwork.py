@@ -47,8 +47,8 @@ base_model.trainable = False
 # Build Model - Linker model
 ################################################################
 if base_network == 'mobilenet_v2':
-    final_layer_ConvT = layers.Conv2DTranspose(64,kernel_size=(8,8))(base_model.get_layer('block_16_project_BN').output)
-    linker_input = keras.layers.add([final_layer_ConvT, base_model.get_layer('block_9_project_BN').output])
+    final_layer_ConvT = layers.Conv2DTranspose(64,kernel_size=(3,3), strides=(2,2), padding='same')(base_model.get_layer('block_14_add').output)
+    linker_input = keras.layers.add([final_layer_ConvT, base_model.get_layer('block_8_add').output])
     linker_output = keras.layers.Flatten()(linker_input)
 elif base_network == 'inception_v3':
     final_layer_ConvT = keras.layers.Conv2DTranspose(2048,kernel_size=(12,12))(base_model.get_layer('mixed5').output)
@@ -57,12 +57,14 @@ elif base_network == 'inception_v3':
 else:
     raise(BaseException('Not Implemented'))
 
+#layers.Conv2DTranspose(64,kernel_size=(3,3), strides=(2,2), padding='same')(base_model.get_layer('block_14_add').output)
+
 ################################################################
 # Build Model - FC model
 ################################################################
-FC = keras.layers.Dense(300, activation='selu', name='FC_1')(linker_output)
+FC = keras.layers.Dense(50, activation='relu', name='FC_1')(linker_output)
 FC = keras.layers.Dropout(0.2, name='FC_DO')(FC)
-FC = keras.layers.Dense(200, activation='selu', name='FC_2')(FC)
+FC = keras.layers.Dense(100, activation='relu', name='FC_2')(FC)
 FC = keras.layers.Dense(4, activation='linear',name='FC_3')(FC)
 
 ################################################################
