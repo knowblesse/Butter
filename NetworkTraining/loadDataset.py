@@ -69,14 +69,13 @@ def loadDataset(base_network):
     # Check loaded Dataset
     #################################################################
 
-    # idx = np.random.randint(dataSize*4)
-
-    # plt.clf()
-    # plt.imshow(X[idx,:,:,:]/255)
-    # plt.scatter(y[idx,1], y[idx,0])
-
-    # r = 30
-    # plt.plot([y[idx,1], y[idx,3]], [y[idx,0], y[idx,2]], LineWidth=3, color = 'r')
+    # for idx in range(0, 3000, 5):
+    #     plt.clf()
+    #     plt.imshow(X[idx, :, :, :] / 255)
+    #     plt.scatter(y[idx, 1], y[idx, 0])
+    #     plt.plot([y[idx,1], y[idx,3]], [y[idx,0], y[idx,2]], LineWidth=3, color = 'r')
+    #     plt.draw()
+    #     plt.pause(0.1)
 
     #################################################################
     # Convert Dataset

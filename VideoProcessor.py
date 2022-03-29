@@ -17,7 +17,8 @@ import matplotlib.pyplot as plt
 import pathlib
 from pathlib import Path
 from tqdm import tqdm
-
+from queue import Queue
+from collections import namedtuple
 
 class VideoProcessor:
     """
@@ -41,7 +42,7 @@ class VideoProcessor:
         self.isProcessed = False
 
         # Batch Size
-        self.predictBatchSize = 128
+        self.predictBatchSize = 100
 
         # Load Model
         try:
@@ -97,40 +98,37 @@ class VideoProcessor:
         print(f'VideoProcessor : Starting from Frame {self.start_frame:d}')
 
     def run(self):
+        roi_batch = ROI_Batch(self.predictBatchSize)
         if not self.isStartPositionChecked:
             raise(BaseException('VideoProcessor : check Start Position First!'))
-        self.output_data = np.zeros((np.arange(self.start_frame, self.num_frame, self.process_fps).shape[0],4))
+        self.output_data = np.zeros((np.arange(self.start_frame, self.num_frame, self.process_fps).shape[0],4), dtype=np.int)
         cumerror = 0
 
         # set for multiprocessing. reading frame automatically starts from this function
         self.istream.startROIextractionThread(np.arange(self.start_frame, self.num_frame, self.process_fps))
 
-        batch_idx = np.empty(0, dtype=int)
-        batch_frameNumber = np.empty((0,1), dtype=int)
-        batch_image = np.empty((0, self.ROI_size, self.ROI_size, 3), dtype=np.uint8)
-        batch_coor = np.empty((0,2), dtype=int)
-
         for idx, frameNumber in enumerate(tqdm(np.arange(self.start_frame, self.num_frame, self.process_fps))):
             try:
-                chosen_image, coor = self.istream.getROIImage()
-                batch_idx = np.concatenate((batch_idx, [idx]), axis=0)
-                batch_frameNumber = np.concatenate((batch_frameNumber, np.expand_dims([frameNumber], 0)), axis=0)
-                batch_image = np.concatenate((batch_image, np.expand_dims(chosen_image, 0)), axis=0)
-                batch_coor = np.concatenate((batch_coor, np.expand_dims(coor, 0)), axis=0)
+                image, coor = self.istream.getROIImage()
+                roi_batch.push(idx, frameNumber, image, coor)
             except BlobDetectionFailureError:
                 cumerror += 1
                 print(f'VideoProcessor : Couldn\'t find the ROI in Frame {frameNumber}. Total {cumerror}')
                 self.output_data[idx,:] = [frameNumber, -1, -1, -1]
 
             # Predict the batch
-            if batch_image.shape[0] >= self.predictBatchSize:
-                testing = tf.keras.applications.mobilenet_v2.preprocess_input(batch_image)
+            if roi_batch.full():
+                batch = ROI(*zip(*roi_batch.popall()))
+                testing = tf.keras.applications.mobilenet_v2.preprocess_input(np.array(batch.image))
                 result = self.model.predict(testing)
-                self.output_data[batch_idx,:] = np.concatenate((batch_frameNumber, batch_coor + result[:,:2] - int(self.ROI_size/2), np.expand_dims(vector2degree(result[:,0], result[:,1], result[:,2], result[:,3]),1)), axis=1)
-                batch_idx = np.empty(0, dtype=int)
-                batch_frameNumber = np.empty((0, 1), dtype=int)
-                batch_image = np.empty((0, self.ROI_size, self.ROI_size, 3), dtype=np.uint8)
-                batch_coor = np.empty((0, 2), dtype=int)
+                self.output_data[batch.idx,:] = np.concatenate((np.expand_dims(batch.frameNumber,1), (np.array(batch.coor) + result[:,:2] - int(self.ROI_size/2)).astype(np.int), np.expand_dims(vector2degree(result[:,0], result[:,1], result[:,2], result[:,3]),1)), axis=1)
+
+        # Run for the last batch
+        print(f'Batch size : {len(roi_batch)}')
+        batch = ROI(*zip(*roi_batch.popall()))
+        testing = tf.keras.applications.mobilenet_v2.preprocess_input(np.array(batch.image))
+        result = self.model.predict(testing)
+        self.output_data[batch.idx, :] = np.concatenate((np.expand_dims(batch.frameNumber, 1), (np.array(batch.coor) + result[:, :2] - int(self.ROI_size / 2)).astype(np.int), np.expand_dims(vector2degree(result[:, 0], result[:, 1], result[:, 2], result[:, 3]), 1)), axis=1)
 
         self.isProcessed = True
 
@@ -195,3 +193,25 @@ class VideoProcessor:
             cv.imshow('frame', img)
             cv.waitKey(2000)
         cv.destroyWindow('frame')
+
+ROI = namedtuple('ROI', ('idx', 'frameNumber', 'image', 'coor'))
+class ROI_Batch(object):
+    def __init__(self, capacity):
+        self.item = deque([], maxlen=capacity)
+    def push(self, *args):
+        self.item.append(ROI(*args))
+    def __len__(self):
+        return len(self.item)
+    def full(self):
+        if len(self.item) == self.item.maxlen:
+            return True
+        else:
+            return False
+    def clear(self):
+        self.item.clear()
+    def popall(self):
+        items = list(self.item)
+        self.clear()
+        return items
+
+

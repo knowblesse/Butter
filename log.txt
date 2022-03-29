@@ -1,4 +1,30 @@
 ****************************************************************
+22MAR29
+**************************************************************** 
+* RO
+
+****************************************************************
+22MAR21
+**************************************************************** 
++ Save failed frames as dataset during relabeling
+    - Use the 'G' button to save the data
++ Use location info to recognize the next blob
+    - Since we use the likelihood method, we can all ways other criterion for
+        selecting the most probable blob.
+    - After analysing the "20JUN1-200827-171419_PL" video, these are the some parameters for
+        usual moving speed.
+        - FPS = 5
+        - animal size (median) = 1904
+        - sqrt(animal size) = 43.63
+        - Gaussian peak (mean) = 14.53
+        - Gaussian sd = 13.61
+    - Since the Gaussian peak is roughly 0.33 of the sqrt(animalSize), 
+        a Gaussian distribution of mean= 0.33*sqrt(animalSize) and sd=0.33*sqrt(animalSize) seems
+        a reasonable distance distribution between 0.2 sec
+* TODO 
+    - [DONE] check if the network is predicting all frames until the last one
+
+****************************************************************
 22MAR16
 **************************************************************** 
 * New ROI extractor

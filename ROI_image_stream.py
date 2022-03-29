@@ -10,14 +10,13 @@ import time
 from collections import deque
 
 class ROI_image_stream():
-    def __init__(self,path_data, ROI_size, setMask=True, stableBackground=False):
+    def __init__(self,path_data, ROI_size, setMask=True):
         """
         __init__ : initialize ROI image extraction stream object
         ****************************************************************
         path_data : Path object : path of the video or a folder containing the video
         ROI_size : weight/height of the extracting ROI. This must be an even number.
         setMask : if True, ROI selection screen appears.
-        stableBackground : if True, only the median image is used as the background.
         """
         # Setup VideoCapture
         self.path_video = self.__readVideoPath(path_data)
@@ -34,10 +33,6 @@ class ROI_image_stream():
         self.half_ROI_size = int(np.round(self.ROI_size/2))
         if ROI_size%2 != 0 :
             raise(BaseException('ROI_size is not dividable with 2!'))
-
-        # Foreground detector
-        self.pastFrameNumber = 100
-        self.pastFrames = deque([],maxlen=self.pastFrameNumber)
 
         # Set Mask
         if setMask:
@@ -101,17 +96,21 @@ class ROI_image_stream():
 
         self.animalThreshold = np.median(animalThreshold)
         self.animalSize = {'median': np.median(animalSize), 'sd': np.std(animalSize)}
+        self.p2pDisplacement = {'median' : 0.33 * np.sqrt(self.animalSize['median']), 'sd': 0.33 * np.sqrt(self.animalSize['median'])} # see log.txt 22MAR21
         self.animalConvexity = {'median': np.median(animalConvexity), 'sd': np.std(animalConvexity)}
         self.animalCircularity = {'median': np.median(animalCircularity), 'sd': np.std(animalCircularity)}
+
+        self.pastFrameImage = self.getFrame(0)
 
         self.isForegroundModelBuilt = True
 
     def getFrame(self, frame_number, applyGlobalMask=False):
         """
         getFrame : return original frame
-        ----------------------------------------------------------------
+        -------------------------------------------------------------------------------------
         frame_number : int : frame to process
-        ----------------------------------------------------------------
+        applyGlobalMask : bool : if true, the global mask, set from the beginning, is applied
+        -------------------------------------------------------------------------------------
         returns frame 
         """
         self.vc.set(cv.CAP_PROP_POS_FRAMES, frame_number)
@@ -122,18 +121,6 @@ class ROI_image_stream():
             image = cv.bitwise_and(image, image, mask=self.global_mask)
         return image
 
-    def drawFrame(self, frame_number):
-        """
-        drawFrame : draw original frame
-        --------------------------------------------------------------------------------
-        frame_number : int : frame to process
-        """
-        image = self.getFrame(frame_number)
-
-        cv.putText(image,f'Frame : {frame_number:.0f}', [0, int(image.shape[0] - 1)], fontFace=cv.FONT_HERSHEY_DUPLEX, fontScale=0.8,
-                   color=[255, 255, 255], thickness=1)
-        cv.imshow('Frame', image)
-        cv.waitKey()
 
     def startROIextractionThread(self, frame_number_array):
         """
@@ -154,51 +141,12 @@ class ROI_image_stream():
 
         # ROI detection Thread and Queue
         self.blobQ = Queue(maxsize=200)
+        self.prevPoint = None
         self.roiDetectionThread = Thread(target=self.__processFrames, args=())
         self.roiDetectionThread.daemon = True
         self.roiDetectionThread.start()
 
         self.isMultithreading = True
-
-    def getFrameCount(self):
-        """
-        getFrameCount : get frame size from the VideoCapture object.
-            I can not trust vid.get(cv.CAP_PROP_FRAME_COUNT), because sometime I can't retrieve the last frame with vid.read()
-        """
-        num_frame = int(self.vc.get(cv.CAP_PROP_FRAME_COUNT))
-        self.vc.set(cv.CAP_PROP_POS_FRAMES, num_frame-1)
-        ret, _ = self.vc.read()
-        while not ret:
-            num_frame -= 1
-            self.vc.set(cv.CAP_PROP_POS_FRAMES, num_frame)
-            ret, _ = self.vc.read()
-        return num_frame
-
-    def getFPS(self):
-        return self.vc.get(cv.CAP_PROP_FPS)
-
-    def __readVideoPath(self, path_data):
-        """
-        parse the path of the video. if not found or multiple files are found, evoke an error
-        """
-        if path_data.is_file():
-            if path_data.suffix in ['.mkv', '.avi', '.mp4']: # path is video.mkv
-                return path_data
-            else:
-                raise(BaseException(f'ROI_image_stream : Following file is not a supported video type : {path_data.suffix}'))
-        elif path_data.is_dir():
-            vidlist = []
-            vidlist.extend([i for i in path_data.glob('*.mkv')])
-            vidlist.extend([i for i in path_data.glob('*.avi')])
-            vidlist.extend([i for i in path_data.glob('*.mp4')])
-            if len(vidlist) == 0:
-                raise(BaseException(f'ROI_image_stream : Can not find video in {path_data}'))
-            elif len(vidlist) > 1:
-                raise(BaseException(f'ROI_image_stream : Multiple video files found in {path_data}'))
-            else:
-                return vidlist[0]
-        else:
-            raise(BaseException(f'ROI_image_stream : Can not find video file in {path_data}'))
 
     def __readVideo(self):
         """
@@ -227,34 +175,31 @@ class ROI_image_stream():
         while not(self.frameQ.empty()) or self.vcIOthread.isAlive():
             if not self.blobQ.full():
                 frame_number, image = self.frameQ.get()
-                detected_blobs = self.__findBlob(image)
-                self.blobQ.put((frame_number, image, detected_blobs))
+                detected_blob = self.__findBlob(image, prevPoint=self.prevPoint)
+                self.blobQ.put((frame_number, image, detected_blob))
+                if detected_blob is not None:
+                    self.prevPoint = detected_blob
             else:
                 time.sleep(0.1)
         print('ROI_image_stream : ROI extraction Thread stopped\n')
 
-    def getKernel(self, size):
-        size = int(size)
-        return cv.getStructuringElement(cv.MORPH_ELLIPSE, (size, size),
-                                        ((int((size - 1) / 2), int((size - 1) / 2))))
-    def __findBlob(self, image, maxBlob = 3, sequentialCalling=False):
+    def __findBlob(self, image, prevPoint=None):
         """
         __findBlob: from given image, apply noise filter and find blob.
         --------------------------------------------------------------------------------
         image : 3D np.array : image to process
-        maxBlob : int : maximum number of blobs to return 
-        sequentialCalling : bool : set true if this function is called sequentially through time.
-            Every image called with this function is added to the self.pastFrames
         --------------------------------------------------------------------------------
         return list of blobs
         --------------------------------------------------------------------------------
         """
+        # Constant
+        maxBlob = 3 # how many maximum size blobs to find 
         # Add current image to the pastFrames Storage
-        if sequentialCalling:
-            self.pastFrames.append(image)
+        if prevPoint is not None:
+            self.pastFrameImage = cv.addWeighted(self.pastFrameImage, 0.9, image, 0.1, 0)
 
         # Foreground Detector
-        weight_mediandiff = (0.5 + 0.5*(self.pastFrameNumber - len(self.pastFrames))/self.pastFrameNumber)
+        weight_mediandiff = 0.8
         weight_recentdiff = 1 - weight_mediandiff
 
         if weight_recentdiff == 0 :
@@ -262,7 +207,7 @@ class ROI_image_stream():
         else:
             image = cv.addWeighted(
                 cv.absdiff(image, self.medianFrame), weight_mediandiff,
-                cv.absdiff(image, np.median(self.pastFrames)), weight_recentdiff,
+                cv.absdiff(image, self.pastFrameImage), weight_recentdiff,
                 0)
 
         image = cv.cvtColor(image, cv.COLOR_RGB2GRAY)
@@ -276,6 +221,7 @@ class ROI_image_stream():
         largestContours = [cnts[i] for i in largestContourIndex]
 
         # Calculate Feature information
+        centers = np.array([np.round(cv.minEnclosingCircle(cnt)[0]).astype(int) for cnt in largestContours])
         area = np.array([cv.contourArea(cnt) for cnt in largestContours])
         perimeter = np.array([cv.arcLength(cnt, closed=True) for cnt in largestContours])
 
@@ -298,16 +244,64 @@ class ROI_image_stream():
 
         likelihoods = np.log(L_Size) + np.log(L_Convexity) + np.log(L_Circularity)
 
-        # output center
-        detected_blobs = [{'pt':np.round(cv.minEnclosingCircle(cnt)[0]).astype(int), 'likelihood': likelihood} for cnt, likelihood in zip(largestContours,likelihoods)]
+        # If no blob is found, then return None as output
+        if len(likelihoods) == 0:
+            return None
 
-        return detected_blobs
+        # If prevPoint is provided, then use previous location to calculate more accurate loglikelihood
+        if prevPoint is not None:
+            distance = np.sum((prevPoint - centers)**2, axis=1)**0.5
+            L_Distance = np.max([
+                norm.cdf(distance + self.p2pDisplacement['sd'] * 0.1, self.p2pDisplacement['median'],
+                         self.p2pDisplacement['sd'])
+                - norm.cdf(distance - self.p2pDisplacement['sd'] * 0.1, self.p2pDisplacement['median'],
+                           self.p2pDisplacement['sd']),
+                1e-10 * np.ones(distance.shape)], axis=0)  # 14.530208395578228, 13.609712279904377
+            L_Distance = 0.1 * L_Distance # penalty term for fixing to a wrong location
+            likelihoods += np.log(L_Distance)
+
+        return centers[np.argmax(likelihoods)]
 
     def drawROI(self, frame_number):
         img = self.getFrame(frame_number)
         ROIcenter = self.getROIImage(frame_number)[1]
         cv.rectangle(img, [ROIcenter[1]-self.half_ROI_size, ROIcenter[0]-self.half_ROI_size], [ROIcenter[1]+self.half_ROI_size, ROIcenter[0]+self.half_ROI_size])
         return img
+
+    def drawFrame(self, frame_number):
+        """
+        drawFrame : draw original frame
+        --------------------------------------------------------------------------------
+        frame_number : int : frame to process
+        """
+        image = self.getFrame(frame_number)
+
+        cv.putText(image,f'Frame : {frame_number:.0f}', [0, int(image.shape[0] - 1)], fontFace=cv.FONT_HERSHEY_DUPLEX, fontScale=0.8,
+                   color=[255, 255, 255], thickness=1)
+        cv.imshow('Frame', image)
+        cv.waitKey()
+
+    def getFrameCount(self):
+        """
+        getFrameCount : get frame size from the VideoCapture object.
+            I can not trust vid.get(cv.CAP_PROP_FRAME_COUNT), because sometime I can't retrieve the last frame with vid.read()
+        """
+        num_frame = int(self.vc.get(cv.CAP_PROP_FRAME_COUNT))
+        self.vc.set(cv.CAP_PROP_POS_FRAMES, num_frame-1)
+        ret, _ = self.vc.read()
+        while not ret:
+            num_frame -= 1
+            self.vc.set(cv.CAP_PROP_POS_FRAMES, num_frame)
+            ret, _ = self.vc.read()
+        return num_frame
+
+    def getFPS(self):
+        return self.vc.get(cv.CAP_PROP_FPS)
+
+    def getKernel(self, size):
+        size = int(size)
+        return cv.getStructuringElement(cv.MORPH_ELLIPSE, (size, size),
+                                        ((int((size - 1) / 2), int((size - 1) / 2))))
 
     def __denoiseBinaryImage(self, binaryImage):
         """
@@ -325,13 +319,36 @@ class ROI_image_stream():
         # denoisedBinaryImage = cv.morphologyEx(denoisedBinaryImage, cv.MORPH_OPEN, self.getKernel(12))
         return denoisedBinaryImage
 
-    def getROIImage(self, frame_number=-1, previous_rc = None):
+    def __readVideoPath(self, path_data):
+        """
+        parse the path of the video. if not found or multiple files are found, evoke an error
+        """
+        if path_data.is_file():
+            if path_data.suffix in ['.mkv', '.avi', '.mp4']: # path is video.mkv
+                return path_data
+            else:
+                raise(BaseException(f'ROI_image_stream : Following file is not a supported video type : {path_data.suffix}'))
+        elif path_data.is_dir():
+            vidlist = []
+            vidlist.extend([i for i in path_data.glob('*.mkv')])
+            vidlist.extend([i for i in path_data.glob('*.avi')])
+            vidlist.extend([i for i in path_data.glob('*.mp4')])
+            if len(vidlist) == 0:
+                raise(BaseException(f'ROI_image_stream : Can not find video in {path_data}'))
+            elif len(vidlist) > 1:
+                raise(BaseException(f'ROI_image_stream : Multiple video files found in {path_data}'))
+            else:
+                return vidlist[0]
+        else:
+            raise(BaseException(f'ROI_image_stream : Can not find video file in {path_data}'))
+
+    def getROIImage(self, frame_number=-1):
         """
         extractROIImage : return ROI frame from the video
             frame_number can be omitted if the class uses multithreading.
             In that case, self.startROIextractionThread function must be called prior to this func.
             If frame_number is not provided and the multithreading is not enabled, returns error.
-       -------------------------------------------------------------------------------- 
+        -------------------------------------------------------------------------------- 
         frame_number : int or int numpy array : frame to process
         ---------------------------------------------------------------- 
         outputFrame : 3D numpy array : ROI frame  
@@ -342,22 +359,19 @@ class ROI_image_stream():
 
         if frame_number != -1: # frame_number is provided
             image = self.getFrame(frame_number, applyGlobalMask=True)
-            detected_blobs = self.__findBlob(image)
+            detected_blob = self.__findBlob(image)
 
         else: # frame number is not provided
             if not self.isMultithreading: # if multithreading is not used
                 raise(TypeError('getROIImage() missing 1 required positional argument: \'frame_number\'\n'
                                 'If you are trying to use this function as multithreading, check if you called startROIextractionThread()'))
-            frame_number, image, detected_blobs = self.blobQ.get()
+            frame_number, image, detected_blob = self.blobQ.get()
 
-        # Use the highest likelihood blob
-        if len(detected_blobs) == 0:
-            raise (BlobDetectionFailureError('No Blob'))
-        else:
-            detected_blob = detected_blobs[np.argmax([blob['likelihood'] for blob in detected_blobs])]
+        if detected_blob is None:
+            raise(BlobDetectionFailureError('No Blob'))
 
-        blob_center_row = detected_blob['pt'][1]
-        blob_center_col = detected_blob['pt'][0]
+        blob_center_row = detected_blob[1]
+        blob_center_col = detected_blob[0]
 
         # Create expanded version of the original image.
         # In this way, we can prevent errors when center of the ROI is near the boarder of the image.
@@ -382,4 +396,4 @@ def vector2degree(r1,c1,r2,c2):
     # if r1 <= r2, then [0, 180) degree = temp_deg
     # if r1 > r2, then [180. 360) degree = 360 - temp_deg
     deg = 360 * np.array(r1 > r2, dtype=int) + (np.array(r1 <= r2, dtype=int) - np.array(r1 > r2, dtype=int)) * temp_deg
-    return deg
+    return np.round(deg).astype(np.int)
