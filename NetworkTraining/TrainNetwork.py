@@ -3,6 +3,7 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import Model
 from tensorflow.keras import layers
+from tensorflow.keras.callbacks import LearningRateScheduler
 from pathlib import Path
 import datetime
 import time
@@ -57,28 +58,37 @@ elif base_network == 'inception_v3':
 else:
     raise(BaseException('Not Implemented'))
 
-#layers.Conv2DTranspose(64,kernel_size=(3,3), strides=(2,2), padding='same')(base_model.get_layer('block_14_add').output)
-
 ################################################################
 # Build Model - FC model
 ################################################################
-FC = keras.layers.Dense(50, activation='relu', name='FC_1')(linker_output)
-FC = keras.layers.Dropout(0.2, name='FC_DO')(FC)
-FC = keras.layers.Dense(100, activation='relu', name='FC_2')(FC)
+FC = keras.layers.Dropout(0.2, name='FC_DO1')(linker_output)
+FC = keras.layers.Dense(200, activation='relu', name='FC_1')(FC)
+FC = keras.layers.Dropout(0.2, name='FC_DO2')(FC)
+FC = keras.layers.Dense(200, activation='relu', name='FC_2')(FC)
 FC = keras.layers.Dense(4, activation='linear',name='FC_3')(FC)
 
 ################################################################
 # Compile and Train
 ################################################################
+def scheduler(epoch, lr):
+    if epoch < 4000:
+        base_model.trainable = False
+        return 1e-4
+    else:
+        if epoch > 4500:
+            base_model.trainable = True
+        return lr * tf.math.exp(-0.01)
+
+learningRateScheduler = LearningRateScheduler(scheduler)
 new_model = Model(inputs=base_model.input, outputs=FC)
-new_model.compile(optimizer=keras.optimizers.SGD(learning_rate=1e-8, momentum=0.07), loss='mae', metrics='mae')
-#new_model.compile(optimizer=keras.optimizers.Adagrad(learning_rate=1e-4, initial_accumulator_value=0.2), loss='mae', metrics='mae')
+new_model.compile(optimizer=keras.optimizers.SGD(learning_rate=1e-4, momentum=0.1), loss='mae', metrics='mae')
 start_time = time.time()
-save_interval = 200
-total_epoch = 10000
+save_interval = 100
+total_epoch = 5000
 for i in np.arange(int(total_epoch/save_interval)):
-    new_model.fit(X_conv,y,epochs=int(save_interval*(i+1)),initial_epoch=int(save_interval*i), validation_split=0.1,batch_size=10)
+    history = new_model.fit(X_conv,y,epochs=int(save_interval*(i+1)),initial_epoch=int(save_interval*i), callbacks=[learningRateScheduler], validation_split=0.2,batch_size=10)
     print('Saving...')
+    np.savetxt('history_'+str(i)+'.txt', history.history, delimiter=',')
     new_model.save(model_save_path)
     print(f'Saved until {save_interval*(i+1):d} epochs')
 print('Elapsed time : ' + str(datetime.timedelta(seconds=time.time() - start_time)))
