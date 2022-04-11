@@ -1,12 +1,17 @@
+from datetime import datetime
+from datetime import timedelta
+import pickle
+import time
+
+from pathlib import Path
 import numpy as np
+
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import Model
 from tensorflow.keras import layers
 from tensorflow.keras.callbacks import LearningRateScheduler
-from pathlib import Path
-import datetime
-import time
+
 import loadDataset
 
 # Tensorflow version test
@@ -83,14 +88,19 @@ learningRateScheduler = LearningRateScheduler(scheduler)
 new_model = Model(inputs=base_model.input, outputs=FC)
 new_model.compile(optimizer=keras.optimizers.SGD(learning_rate=1e-4, momentum=0.1), loss='mae', metrics='mae')
 start_time = time.time()
-save_interval = 100
+save_interval = 200
 total_epoch = 5000
+history_file_name = datetime.now().strftime("%y%m%d_%H%M")
+history = {'loss':[], 'mae': [], 'val_loss': [], 'val_mae': [], 'lr': []}
 for i in np.arange(int(total_epoch/save_interval)):
-    history = new_model.fit(X_conv,y,epochs=int(save_interval*(i+1)),initial_epoch=int(save_interval*i), callbacks=[learningRateScheduler], validation_split=0.2,batch_size=10)
+    hist = new_model.fit(X_conv,y,epochs=int(save_interval*(i+1)),initial_epoch=int(save_interval*i), callbacks=[learningRateScheduler], validation_split=0.2,batch_size=32)
+    for k in history.keys():
+        history[k].extend(hist.history[k])
     print('Saving...')
-    np.savetxt('history_'+str(i)+'.txt', history.history, delimiter=',')
+    with open('history_'+ history_file_name +'.pickle', 'wb') as f:
+        pickle.dump(history, f, pickle.HIGHEST_PROTOCOL)
     new_model.save(model_save_path)
     print(f'Saved until {save_interval*(i+1):d} epochs')
-print('Elapsed time : ' + str(datetime.timedelta(seconds=time.time() - start_time)))
+print('Elapsed time : ' + str(timedelta(seconds=time.time() - start_time)))
 
 #7800 epochs : 15 hours
