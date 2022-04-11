@@ -28,14 +28,20 @@ gpus= tf.config.list_physical_devices('GPU')
 for gpu in gpus:
     tf.config.experimental.set_memory_growth(gpu, True)
 
-
 ################################################################
 # Constants
 ################################################################
 base_network = 'mobilenet_v2'
 model_save_path = Path('./Model_220323')
 
-X_conv, y = loadDataset.loadDataset(base_network) # X_conv : converted to match the network input format
+
+################################################################
+# Load Dataset
+################################################################
+# X_conv : converted to match the network input format
+#          specifically, processed_data = original_data/127.5-1
+X_conv, y = loadDataset.loadDataset(base_network)
+y = y[:,0:2] # temporal fix to disable head direction detection
 
 ################################################################
 # Build Model - Base model
@@ -54,7 +60,7 @@ base_model.trainable = False
 ################################################################
 if base_network == 'mobilenet_v2':
     final_layer_ConvT = layers.Conv2DTranspose(64,kernel_size=(3,3), strides=(2,2), padding='same')(base_model.get_layer('block_14_add').output)
-    linker_input = keras.layers.add([final_layer_ConvT, base_model.get_layer('block_8_add').output])
+    linker_input = keras.layers.concatenate([final_layer_ConvT, base_model.get_layer('block_8_add').output])
     linker_output = keras.layers.Flatten()(linker_input)
 elif base_network == 'inception_v3':
     final_layer_ConvT = keras.layers.Conv2DTranspose(2048,kernel_size=(12,12))(base_model.get_layer('mixed5').output)
@@ -70,7 +76,7 @@ FC = keras.layers.Dropout(0.2, name='FC_DO1')(linker_output)
 FC = keras.layers.Dense(200, activation='relu', name='FC_1')(FC)
 FC = keras.layers.Dropout(0.2, name='FC_DO2')(FC)
 FC = keras.layers.Dense(200, activation='relu', name='FC_2')(FC)
-FC = keras.layers.Dense(4, activation='linear',name='FC_3')(FC)
+FC = keras.layers.Dense(2, activation='linear',name='FC_3')(FC)
 
 ################################################################
 # Compile and Train
