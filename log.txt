@@ -1,7 +1,15 @@
 ****************************************************************
+22APR11
+**************************************************************** 
+* Rearranging the Net to make a more accurate prediction
+* Testing a net with head location detection function only.
+
+****************************************************************
 22MAR29
 **************************************************************** 
-* RO
+* ROI detection method now use the prev location
+* network uses the batch prediction
+* rearranged the code
 
 ****************************************************************
 22MAR21
@@ -47,8 +55,8 @@
     - However, if the size of the batch is too large, the GPU's memory runs out. An automatic bath size
         selection algorithm might help. But I'll do this later ;P
 * TODO
-    - save wrong frame as dataset (ReLabeler)
-    - Location parsing
+    - [DONE] save wrong frame as dataset (ReLabeler)
+    - [DONE] Location parsing
 
 ****************************************************************
 21OCT15
@@ -76,7 +84,7 @@
     - After constructing the ROI_image_stream, user manually select the ROI of the video stream.
     - Any image processed into the 
 # TODO
-    - I don't know the exact algorithm of the MOG2. I setup the parameters with few trials and errors,
+    - [DONE] I don't know the exact algorithm of the MOG2. I setup the parameters with few trials and errors,
     but I should look into the original work to set the best parameters for my purpose.
 
 ****************************************************************

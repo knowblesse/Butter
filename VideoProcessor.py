@@ -51,6 +51,12 @@ class VideoProcessor:
             raise(BaseException('VideoProcessor : Can not load model from ' + str(model_path)))
         self.model = model
 
+        # Check if the model has the head detection function
+        if self.model.output.shape[1] == 2:
+            self.isHeadDetectionEnabled = False
+        elif self.model.output.shape[1] == 4:
+            self.isHeadDetectionEnabled = True
+
         # Get ROI size from the loaded model
         self.ROI_size = model.layers[0].input.shape[1]
 
@@ -121,14 +127,36 @@ class VideoProcessor:
                 batch = ROI(*zip(*roi_batch.popall()))
                 testing = tf.keras.applications.mobilenet_v2.preprocess_input(np.array(batch.image))
                 result = self.model.predict(testing)
-                self.output_data[batch.idx,:] = np.concatenate((np.expand_dims(batch.frameNumber,1), (np.array(batch.coor) + result[:,:2] - int(self.ROI_size/2)).astype(np.int), np.expand_dims(vector2degree(result[:,0], result[:,1], result[:,2], result[:,3]),1)), axis=1)
+                if self.isHeadDetectionEnabled:
+                    self.output_data[batch.idx, :] = np.concatenate((np.expand_dims(batch.frameNumber, 1), (
+                                np.array(batch.coor) + result[:, :2] - int(self.ROI_size / 2)).astype(np.int),
+                                                                     np.expand_dims(
+                                                                         vector2degree(result[:, 0], result[:, 1],
+                                                                                       result[:, 2], result[:, 3]), 1)),
+                                                                    axis=1)
+                else:
+                    self.output_data[batch.idx, :] = np.concatenate((np.expand_dims(batch.frameNumber, 1), (
+                                np.array(batch.coor) + result[:, :2] - int(self.ROI_size / 2)).astype(np.int),
+                                                                     np.expand_dims(np.ones(result.shape[0]), 1)),
+                                                                    axis=1)
 
         # Run for the last batch
         print(f'Batch size : {len(roi_batch)}')
         batch = ROI(*zip(*roi_batch.popall()))
         testing = tf.keras.applications.mobilenet_v2.preprocess_input(np.array(batch.image))
         result = self.model.predict(testing)
-        self.output_data[batch.idx, :] = np.concatenate((np.expand_dims(batch.frameNumber, 1), (np.array(batch.coor) + result[:, :2] - int(self.ROI_size / 2)).astype(np.int), np.expand_dims(vector2degree(result[:, 0], result[:, 1], result[:, 2], result[:, 3]), 1)), axis=1)
+        if self.isHeadDetectionEnabled:
+            self.output_data[batch.idx, :] = np.concatenate((np.expand_dims(batch.frameNumber, 1), (
+                    np.array(batch.coor) + result[:, :2] - int(self.ROI_size / 2)).astype(np.int),
+                                                             np.expand_dims(
+                                                                 vector2degree(result[:, 0], result[:, 1],
+                                                                               result[:, 2], result[:, 3]), 1)),
+                                                            axis=1)
+        else:
+            self.output_data[batch.idx, :] = np.concatenate((np.expand_dims(batch.frameNumber, 1), (
+                    np.array(batch.coor) + result[:, :2] - int(self.ROI_size / 2)).astype(np.int),
+                                                             np.expand_dims(np.ones(result.shape[0]), 1)),
+                                                            axis=1)
 
         self.isProcessed = True
 
