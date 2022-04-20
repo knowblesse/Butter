@@ -4,16 +4,11 @@ from pathlib import Path
 from tensorflow import keras
 import matplotlib.pyplot as plt
 
-def loadDataset(base_network):
+def loadDataset():
     ################################################################
     # Setup
     ################################################################
-    if base_network == 'mobilenet_v2':
-        base_network_inputsize = 224
-    elif base_network == 'inception_v3':
-        base_network_inputsize = 300
-    else:
-        raise(BaseException('Not implemented'))
+    base_network_inputsize = 224
 
     ################################################################
     # Input data : y
@@ -80,9 +75,6 @@ def loadDataset(base_network):
     #################################################################
     # Convert Dataset
     #################################################################
-    if base_network == 'mobilenet_v2':
-        X_conv = keras.applications.mobilenet_v2.preprocess_input(X)
-    elif base_network == 'inception_v3':
-        X_conv = keras.applications.inception_v3.preprocess_input(X)
+    X_conv = keras.applications.mobilenet_v2.preprocess_input(X)
 
     return (X_conv, y)

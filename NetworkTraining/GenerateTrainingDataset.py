@@ -25,16 +25,10 @@ from checkPreviousDataset import checkPreviousDataset
 # Constants
 ################################################################
 new_data_folder = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21JAN2/#21JAN2-210428-195618_IL')#Path.home() / 'VCF/butter/dataset'
-base_network = 'mobilenet_v2'
 ################################################################
 # Setup
 ################################################################
-if base_network == 'mobilenet_v2':
-    base_network_inputsize = 224
-elif base_network == 'inception_v3':
-    base_network_inputsize = 300
-else:
-    raise(BaseException('Not implemented'))
+base_network_inputsize = 224
 
 ################################################################
 # Check Previous Dataset
