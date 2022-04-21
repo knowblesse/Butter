@@ -1,7 +1,38 @@
 ****************************************************************
+22APR21
+**************************************************************** 
+* Working Model Complete
+    - I changed the main net's structure. The network now merge pre-trained three layers from the 
+        initial structure and use it as the base network. 
+    - I also applied the early stopping (w/ retaining the best parameter) and adjustable learning. 
+    - Finally performed hyperparameter tunnning using a simple grid-search method. 
+    - I also included dataset from the manually selected 'failed data' resulting nearly 1000
+        labeled images.
+    - These dramatically improved the error rate, and the Mean Average Error(MAE) of the validation
+        dataset is about 12(px).
+    - Two models are currently available.
+        - butterNet_V1 : Previously used net (Created on 2021OCT15).
+            MAE(incl. all data) : 10.49
+        - butterNet_V2 :
+            MAE(incl. all data) : 5.04 
+* /NetworkTraining/loadDataset.py dataset parsing method changed
+    - load the dataset image and csv file always raised the error, 
+        if the python console is in a wrong location.
+        I changed this using the glob function and made it to 
+        run regardless of the cwd.
+        
+****************************************************************
+22APR11
+**************************************************************** 
+* Rearranging the Net to make a more accurate prediction
+* Testing a net with head location detection function only.
+
+****************************************************************
 22MAR29
 **************************************************************** 
-* RO
+* ROI detection method now use the prev location
+* network uses the batch prediction
+* rearranged the code
 
 ****************************************************************
 22MAR21
@@ -47,8 +78,8 @@
     - However, if the size of the batch is too large, the GPU's memory runs out. An automatic bath size
         selection algorithm might help. But I'll do this later ;P
 * TODO
-    - save wrong frame as dataset (ReLabeler)
-    - Location parsing
+    - [DONE] save wrong frame as dataset (ReLabeler)
+    - [DONE] Location parsing
 
 ****************************************************************
 21OCT15
@@ -76,7 +107,7 @@
     - After constructing the ROI_image_stream, user manually select the ROI of the video stream.
     - Any image processed into the 
 # TODO
-    - I don't know the exact algorithm of the MOG2. I setup the parameters with few trials and errors,
+    - [DONE] I don't know the exact algorithm of the MOG2. I setup the parameters with few trials and errors,
     but I should look into the original work to set the best parameters for my purpose.
 
 ****************************************************************

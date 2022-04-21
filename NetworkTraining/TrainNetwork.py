@@ -1,11 +1,19 @@
+from datetime import datetime
+from datetime import timedelta
+import os
+import pickle
+import time
+
+from pathlib import Path
 import numpy as np
+
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import Model
 from tensorflow.keras import layers
-from pathlib import Path
-import datetime
-import time
+from tensorflow.keras.callbacks import LearningRateScheduler
+from tensorflow.keras.callbacks import EarlyStopping
+
 import loadDataset
 
 # Tensorflow version test
@@ -22,65 +30,83 @@ gpus= tf.config.list_physical_devices('GPU')
 for gpu in gpus:
     tf.config.experimental.set_memory_growth(gpu, True)
 
-
 ################################################################
-# Constants
+# Load Dataset
 ################################################################
-base_network = 'mobilenet_v2'
-model_save_path = Path('./Model_220323')
-
-X_conv, y = loadDataset.loadDataset(base_network) # X_conv : converted to match the network input format
+# X_conv : converted to match the network input format
+#          specifically, processed_data = original_data/127.5-1
+X_conv, y = loadDataset.loadDataset()
+#y = y[:,0:2] # temporal fix to disable head direction detection
 
 ################################################################
 # Build Model - Base model
 ################################################################
-if base_network == 'mobilenet_v2':
-    base_model = keras.applications.MobileNetV2(input_shape=X_conv.shape[1:], include_top=False, weights='imagenet')
-elif base_network == 'inception_v3':
-    base_model = keras.applications.InceptionV3(input_shape=X_conv.shape[1:], include_top=False, weights='imagenet')
-else:
-    raise(BaseException('Not implemented'))
-
+base_model = keras.applications.MobileNetV2(input_shape=X_conv.shape[1:], include_top=False, weights='imagenet')
 base_model.trainable = False
 
 ################################################################
 # Build Model - Linker model
 ################################################################
-if base_network == 'mobilenet_v2':
-    final_layer_ConvT = layers.Conv2DTranspose(64,kernel_size=(3,3), strides=(2,2), padding='same')(base_model.get_layer('block_14_add').output)
-    linker_input = keras.layers.add([final_layer_ConvT, base_model.get_layer('block_8_add').output])
-    linker_output = keras.layers.Flatten()(linker_input)
-elif base_network == 'inception_v3':
-    final_layer_ConvT = keras.layers.Conv2DTranspose(2048,kernel_size=(12,12))(base_model.get_layer('mixed5').output)
-    linker_input = keras.layers.concatenate([final_layer_ConvT, base_model.get_layer('mixed10').output])
-    linker_output = keras.layers.Flatten()(linker_input)
-else:
-    raise(BaseException('Not Implemented'))
-
-#layers.Conv2DTranspose(64,kernel_size=(3,3), strides=(2,2), padding='same')(base_model.get_layer('block_14_add').output)
+l2_MaxP = layers.MaxPooling2D(pool_size=(3, 3))(base_model.get_layer('block_2_add').output)
+l5_ConvT = layers.Conv2DTranspose(32, kernel_size=(3, 3), strides=(2, 2), padding='same')(base_model.get_layer('block_5_add').output)
+l5_MaxP = layers.MaxPooling2D(pool_size=(3, 3))(l5_ConvT)
+l12_ConvT = layers.Conv2DTranspose(32, kernel_size=(3,3), strides=(4, 4), padding='valid', output_padding=(1, 1))(base_model.get_layer('block_12_add').output)
+l12_MaxP = layers.MaxPooling2D(pool_size=(3, 3), padding='valid')(l12_ConvT)
+linker_input = keras.layers.concatenate([l2_MaxP, l5_MaxP, l12_MaxP])
+linker_output = keras.layers.Flatten()(linker_input)
 
 ################################################################
 # Build Model - FC model
 ################################################################
-FC = keras.layers.Dense(50, activation='relu', name='FC_1')(linker_output)
-FC = keras.layers.Dropout(0.2, name='FC_DO')(FC)
-FC = keras.layers.Dense(100, activation='relu', name='FC_2')(FC)
+
+FC = keras.layers.Dropout(0.2, name='FC_DO1')(linker_output)
+FC = keras.layers.Dense(500, activation='relu', name='FC_1')(FC)
+FC = keras.layers.Dropout(0.2, name='FC_DO2')(FC)
+FC = keras.layers.Dense(200, activation='relu', name='FC_2')(FC)
 FC = keras.layers.Dense(4, activation='linear',name='FC_3')(FC)
 
 ################################################################
 # Compile and Train
 ################################################################
-new_model = Model(inputs=base_model.input, outputs=FC)
-new_model.compile(optimizer=keras.optimizers.SGD(learning_rate=1e-8, momentum=0.07), loss='mae', metrics='mae')
-#new_model.compile(optimizer=keras.optimizers.Adagrad(learning_rate=1e-4, initial_accumulator_value=0.2), loss='mae', metrics='mae')
-start_time = time.time()
-save_interval = 200
-total_epoch = 10000
-for i in np.arange(int(total_epoch/save_interval)):
-    new_model.fit(X_conv,y,epochs=int(save_interval*(i+1)),initial_epoch=int(save_interval*i), validation_split=0.1,batch_size=10)
-    print('Saving...')
-    new_model.save(model_save_path)
-    print(f'Saved until {save_interval*(i+1):d} epochs')
-print('Elapsed time : ' + str(datetime.timedelta(seconds=time.time() - start_time)))
 
-#7800 epochs : 15 hours
+new_model = Model(inputs=base_model.input, outputs=FC)
+
+################################################################
+# Callbacks
+################################################################
+
+def scheduler(epoch, lr):
+    """
+    Callback function for adaptive learning rate change
+    """
+    if epoch < 60:
+        return 1e-5
+    else:
+        return lr * tf.math.exp(-0.01)
+
+learningRateScheduler = LearningRateScheduler(scheduler)
+es = EarlyStopping(monitor='val_loss', min_delta=5e-3, patience=30, restore_best_weights=True)
+
+new_model.save_weights('default_weights.h5')
+
+batch_size = 32
+momentum = 0.6
+
+model_name = 'Model_' + datetime.now().strftime('%y%m%d_%H%M')
+os.mkdir(model_name)
+new_model.load_weights('default_weights.h5')
+
+optimizer = keras.optimizers.RMSprop(learning_rate=1e-5, momentum=momentum)
+new_model.compile(optimizer=optimizer, loss='mae', metrics='mae')
+start_time = time.time()
+history = new_model.fit(X_conv,y,epochs=2000, verbose=1, callbacks=[learningRateScheduler, es], validation_split=0.2, batch_size=batch_size)
+
+# Save Model
+print('Saving...')
+with open('history_' + model_name + '.pickle', 'wb') as f:
+    pickle.dump(history, f, pickle.HIGHEST_PROTOCOL)
+new_model.save(Path(model_name))
+print(f'Saved {model_name}')
+print('Elapsed time : ' + str(timedelta(seconds=time.time() - start_time)))
+print('Best Score : ' + str(min(history.history['val_mae']))) 
+

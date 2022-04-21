@@ -4,22 +4,24 @@ from pathlib import Path
 from tensorflow import keras
 import matplotlib.pyplot as plt
 
-def loadDataset(base_network):
+def loadDataset():
     ################################################################
     # Setup
     ################################################################
-    if base_network == 'mobilenet_v2':
-        base_network_inputsize = 224
-    elif base_network == 'inception_v3':
-        base_network_inputsize = 300
+    base_network_inputsize = 224
+    csvPath = [path for path in Path('.').glob('./**/Dataset.csv')]
+    if len(csvPath) == 0:
+        raise (BaseException(f'loadDataset : Can not locate csv file'))
+    elif len(csvPath) > 1:
+        raise (BaseException(f'loadDataset : Multiple files are named Dataset.csv'))
     else:
-        raise(BaseException('Not implemented'))
+        csvPath = csvPath[0]
 
     ################################################################
     # Input data : y
     ################################################################
     try:
-        csv_data = np.loadtxt(str(Path('./Dataset/Dataset.csv')),delimiter=',')
+        csv_data = np.loadtxt(str(csvPath.absolute()),delimiter=',')
         y_raw = csv_data[:,1::]
     except:
         raise(BaseException('Label csv file reading error'))
@@ -31,7 +33,7 @@ def loadDataset(base_network):
     X = np.zeros((4 * dataSize,base_network_inputsize,base_network_inputsize,3))
     y = np.zeros((4 * dataSize,4))
 
-    dataset_image = [x for x in sorted(Path('./Dataset').glob('*.png'))]
+    dataset_image = [x for x in sorted(csvPath.parent.glob('*.png'))]
 
     if dataSize != len(dataset_image):
         raise(BaseException('TrainNetwork : Dataset size mismatch'))
@@ -80,9 +82,6 @@ def loadDataset(base_network):
     #################################################################
     # Convert Dataset
     #################################################################
-    if base_network == 'mobilenet_v2':
-        X_conv = keras.applications.mobilenet_v2.preprocess_input(X)
-    elif base_network == 'inception_v3':
-        X_conv = keras.applications.inception_v3.preprocess_input(X)
+    X_conv = keras.applications.mobilenet_v2.preprocess_input(X)
 
     return (X_conv, y)
