@@ -9,12 +9,19 @@ def loadDataset():
     # Setup
     ################################################################
     base_network_inputsize = 224
+    csvPath = [path for path in Path('.').glob('./**/Dataset.csv')]
+    if len(csvPath) == 0:
+        raise (BaseException(f'loadDataset : Can not locate csv file'))
+    elif len(csvPath) > 1:
+        raise (BaseException(f'loadDataset : Multiple files are named Dataset.csv'))
+    else:
+        csvPath = csvPath[0]
 
     ################################################################
     # Input data : y
     ################################################################
     try:
-        csv_data = np.loadtxt(str(Path('./Dataset/Dataset.csv')),delimiter=',')
+        csv_data = np.loadtxt(str(csvPath.absolute()),delimiter=',')
         y_raw = csv_data[:,1::]
     except:
         raise(BaseException('Label csv file reading error'))
@@ -26,7 +33,7 @@ def loadDataset():
     X = np.zeros((4 * dataSize,base_network_inputsize,base_network_inputsize,3))
     y = np.zeros((4 * dataSize,4))
 
-    dataset_image = [x for x in sorted(Path('./Dataset').glob('*.png'))]
+    dataset_image = [x for x in sorted(csvPath.parent.glob('*.png'))]
 
     if dataSize != len(dataset_image):
         raise(BaseException('TrainNetwork : Dataset size mismatch'))

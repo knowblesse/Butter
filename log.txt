@@ -1,4 +1,27 @@
 ****************************************************************
+22APR21
+**************************************************************** 
+* Working Model Complete
+    - I changed the main net's structure. The network now merge pre-trained three layers from the 
+        initial structure and use it as the base network. 
+    - I also applied the early stopping (w/ retaining the best parameter) and adjustable learning. 
+    - Finally performed hyperparameter tunnning using a simple grid-search method. 
+    - I also included dataset from the manually selected 'failed data' resulting nearly 1000
+        labeled images.
+    - These dramatically improved the error rate, and the Mean Average Error(MAE) of the validation
+        dataset is about 12(px).
+    - Two models are currently available.
+        - butterNet_V1 : Previously used net (Created on 2021OCT15).
+            MAE(incl. all data) : 10.49
+        - butterNet_V2 :
+            MAE(incl. all data) : 5.04 
+* /NetworkTraining/loadDataset.py dataset parsing method changed
+    - load the dataset image and csv file always raised the error, 
+        if the python console is in a wrong location.
+        I changed this using the glob function and made it to 
+        run regardless of the cwd.
+        
+****************************************************************
 22APR11
 **************************************************************** 
 * Rearranging the Net to make a more accurate prediction
