@@ -36,7 +36,6 @@ for gpu in gpus:
 # X_conv : converted to match the network input format
 #          specifically, processed_data = original_data/127.5-1
 X_conv, y = loadDataset.loadDataset()
-#y = y[:,0:2] # temporal fix to disable head direction detection
 
 ################################################################
 # Build Model - Base model

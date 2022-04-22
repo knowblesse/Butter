@@ -6,21 +6,22 @@ Warning : Since the neural network is trained with the same or mostly same data,
 the result from the validation data. Use the metric with care.
 """
 import numpy as np
+import os
 
 from pathlib import Path
 from tensorflow import keras
 from tqdm import tqdm
 from keras import metrics
 
-from NetworkTraining.loadDataset import loadDataset
+from loadDataset import loadDataset
 
-model_path = Path('/home/knowblesse/VCF/butter/Models/butterNet_V1')
+model_path = Path('/home/ubuntu/VCF/butter/NetworkTraining/Model_220422_1349')
 try:
     model = keras.models.load_model(str(model_path))
 except:
     raise (BaseException('Can not load model from ' + str(model_path)))
 print(Path('../NetworkTraining/Dataset/Dataset.csv').absolute())
-(X_conv, y) = loadDataset(Path('/home/knowblesse/VCF/butter/NetworkTraining/Dataset/Dataset.csv'))
+(X_conv, y) = loadDataset()
 
 
 y_pred = []
