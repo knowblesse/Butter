@@ -4,7 +4,6 @@
 # Folders
 Models/*
 NetworkTraining/Dataset/*
-debug
 # Video Files
 *.avi
 *.mp4

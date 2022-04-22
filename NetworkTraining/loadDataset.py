@@ -4,19 +4,21 @@ from pathlib import Path
 from tensorflow import keras
 import matplotlib.pyplot as plt
 
-def loadDataset():
+def loadDataset(path=None):
     ################################################################
     # Setup
     ################################################################
     base_network_inputsize = 224
-    csvPath = [path for path in Path('.').glob('./**/Dataset.csv')]
-    if len(csvPath) == 0:
-        raise (BaseException(f'loadDataset : Can not locate csv file'))
-    elif len(csvPath) > 1:
-        raise (BaseException(f'loadDataset : Multiple files are named Dataset.csv'))
+    if path is None:
+        csvPath = [path for path in Path('.').glob('./**/Dataset.csv')]
+        if len(csvPath) == 0:
+            raise (BaseException(f'loadDataset : Can not locate csv file'))
+        elif len(csvPath) > 1:
+            raise (BaseException(f'loadDataset : Multiple files are named Dataset.csv'))
+        else:
+            csvPath = csvPath[0]
     else:
-        csvPath = csvPath[0]
-
+        csvPath = path
     ################################################################
     # Input data : y
     ################################################################
