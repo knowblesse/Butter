@@ -5,9 +5,19 @@ from pathlib import Path
 import cv2 as cv
 from ROI_image_stream import vector2degree
 import numpy as np
+from NetworkTraining.checkPreviousDataset import checkPreviousDataset
 
 # Constants
-TANK_PATH = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/20JUN1/#20JUN1-200814-120239_PL')
+#TANK_PATH = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/20JUN1/#20JUN1-200831-110125_PL')
+TANK_PATH = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/20JUN1/#20JUN1-200827-171419_PL')
+base_network = 'mobilenet_v2'
+
+if base_network == 'mobilenet_v2':
+    base_network_inputsize = 224
+elif base_network == 'inception_v3':
+    base_network_inputsize = 300
+else:
+    raise(BaseException('Not implemented'))
 
 # Find the path to the video
 vidlist = []
@@ -34,6 +44,10 @@ num_frame = vid.get(cv.CAP_PROP_FRAME_COUNT)
 fps = vid.get(cv.CAP_PROP_FPS)
 lps = fps/data[1,0] # labels per second
 current_label_index = 0
+
+# Load the Dataset data to append new data directly.
+datasetLocation = Path('./').absolute().parent/'NetworkTraining/Dataset'
+(dataset_csv, dataset_number) = checkPreviousDataset(datasetLocation = datasetLocation)
 
 # Find the excursion
 velocity = ((data[1:,1] - data[0:-1,1]) ** 2 + (data[1:,2] - data[0:-1,2]) ** 2) ** 0.5
@@ -91,6 +105,44 @@ def refreshScreen():
     possibleExcursion[current_label_index] = False
     velocity[current_label_index] = 0
 
+def saveROIData(dataset_csv):
+    # Get Current Frame
+    current_frame_number = int(data[current_label_index, 0])
+    vid.set(cv.CAP_PROP_POS_FRAMES, current_frame_number)
+    ret, image = vid.read()
+    if not ret:
+        raise (BaseException('Can not read the frame'))
+
+    # Get some variables to cut the frame into ROI size
+    ROI_size = base_network_inputsize
+    r = round(data[current_label_index, 1])
+    c = round(data[current_label_index, 2])
+    theta = data[current_label_index, 3]
+
+    # Calculate center offset
+    r_offset = np.random.randint(-1 / 4 * ROI_size, 1 / 4 * ROI_size)
+    c_offset = np.random.randint(-1 / 4 * ROI_size, 1 / 4 * ROI_size)
+
+    # Calculate crop range
+    r_range = [r - int(ROI_size / 2) + r_offset, r + int(ROI_size / 2) + r_offset]
+    c_range = [c - int(ROI_size / 2) + c_offset, c + int(ROI_size / 2) + c_offset]
+
+    # Cut the image
+    half_ROI_size = int(ROI_size/2)
+    expanded_image = cv.copyMakeBorder(image, half_ROI_size, half_ROI_size, half_ROI_size, half_ROI_size,
+                                       cv.BORDER_CONSTANT, value=[0, 0, 0])
+    ROI_image = expanded_image[r_range[0]+half_ROI_size:r_range[1]+half_ROI_size, c_range[0]+half_ROI_size:c_range[1]+half_ROI_size, :]
+
+    cv.imwrite(str(datasetLocation/Path(f'Dataset_{dataset_csv.shape[0]:04d}.png')), ROI_image)
+
+    new_data_in_roi = np.expand_dims((int(ROI_size / 2) - r_offset, int(ROI_size / 2) - c_offset, theta), 0)
+
+    dataset_csv = np.vstack((dataset_csv[:, 1::], new_data_in_roi))
+    dataset_csv = np.hstack((np.expand_dims(np.arange(dataset_csv.shape[0]), 1), dataset_csv))
+    np.savetxt(datasetLocation/Path('Dataset.csv'), dataset_csv, delimiter=',')
+    print(f'ReLabeler : New data is appended. Now total {dataset_csv.shape[0]:d} data is in the dataset')
+    return dataset_csv
+
 while key!=ord('q'):
     cv.imshow('Main', labelObject.image)
     key = cv.waitKey(1)
@@ -118,7 +170,9 @@ while key!=ord('q'):
         foundExcursionIndex = np.argmax(np.abs(velocity))
         current_label_index = foundExcursionIndex
         refreshScreen()
-
+    elif key == ord('g'):
+        dataset_csv = saveROIData(dataset_csv)
+        print('Relabeler : Saved!')
     if labelObject.isLabeled:
         try:
             data[current_label_index,1] = labelObject.start_coordinate[1]

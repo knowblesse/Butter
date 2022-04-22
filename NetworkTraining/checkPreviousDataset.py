@@ -13,19 +13,21 @@ import numpy as np
 from pathlib import Path
 import re
 
-def checkPreviousDataset():
-    if Path('./Dataset/Dataset.csv').is_file(): # Dataset file exist
+def checkPreviousDataset(datasetLocation = Path('./Dataset/'), silent=False):
+    if datasetLocation.is_dir(): # Dataset file exist
         # Check data number from CSV
-        dataset_csv = np.loadtxt(str(next(Path('./Dataset').glob('*.csv'))), delimiter=',')
+        dataset_csv = np.loadtxt(str(next(datasetLocation.glob('*.csv'))), delimiter=',')
 
         # Check data number from Image
-        dataset_image = [str(x.name) for x in sorted(Path('./Dataset').glob('*.png'))]
+        dataset_image = [str(x.name) for x in sorted(datasetLocation.glob('*.png'))]
 
         # Compare size of  csv and image
         if len(dataset_image) == dataset_csv.shape[0]:
-            print('checkPreviousDataset : Dataset size match')
+            if not silent:
+                print('checkPreviousDataset : Dataset size match')
         elif len(dataset_image) < dataset_csv.shape[0]:
-            print('checkPreviousDataset : Some of images are deleted! deleting corresponding csv data entries...')
+            if not silent:
+                print('checkPreviousDataset : Some of images are deleted! deleting corresponding csv data entries...')
         elif len(dataset_image) > dataset_csv.shape[0]:
             raise(BaseException('checkPreviousDataset : Some of csv data entries are missing!'))
 
@@ -47,10 +49,12 @@ def checkPreviousDataset():
         # Relabel Image
         for i, path in enumerate(sorted(datasetLocation.glob('*.png'))):
             path.rename(datasetLocation / Path(f'Dataset_{i:04d}.png'))
-        print(f'checkPreviousDataset : {dataset_number} data is confirmed')
-        print('checkPreviousDataset : New Data will be appended to this data')
+        if not silent:
+            print(f'checkPreviousDataset : {dataset_number} data is confirmed')
+            print('checkPreviousDataset : New Data will be appended to this data')
     else:
         dataset_csv = np.zeros((0,4))
         dataset_number = 0
-        print('checkPreviousDataset : New dataset is generated')
+        if not silent:
+            print('checkPreviousDataset : New dataset is generated')
     return (dataset_csv, dataset_number)
