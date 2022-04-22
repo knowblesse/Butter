@@ -8,8 +8,7 @@ import numpy as np
 from NetworkTraining.checkPreviousDataset import checkPreviousDataset
 
 # Constants
-#TANK_PATH = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/20JUN1/#20JUN1-200831-110125_PL')
-TANK_PATH = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/20JUN1/#20JUN1-200827-171419_PL')
+TANK_PATH = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/20JUN1/#20JUN1-200831-110125_PL')
 base_network = 'mobilenet_v2'
 
 if base_network == 'mobilenet_v2':
@@ -174,17 +173,20 @@ while key!=ord('q'):
         dataset_csv = saveROIData(dataset_csv)
         print('Relabeler : Saved!')
     if labelObject.isLabeled:
-        try:
-            data[current_label_index,1] = labelObject.start_coordinate[1]
-            data[current_label_index,2] = labelObject.start_coordinate[0]
-            data[current_label_index, 3] = vector2degree(
-                labelObject.start_coordinate[1],
-                labelObject.start_coordinate[0],
-                labelObject.end_coordinate[1],
-                labelObject.end_coordinate[0])
-            labelObject.initialize(getFrame(current_label_index))
-        except IndexError :
-            labelObject.isLabeled = False
+        if not (labelObject.start_coordinate == labelObject.end_coordinate):
+            try:
+                data[current_label_index,1] = labelObject.start_coordinate[1]
+                data[current_label_index,2] = labelObject.start_coordinate[0]
+                data[current_label_index, 3] = vector2degree(
+                    labelObject.start_coordinate[1],
+                    labelObject.start_coordinate[0],
+                    labelObject.end_coordinate[1],
+                    labelObject.end_coordinate[0])
+                labelObject.initialize(getFrame(current_label_index))
+            except IndexError :
+                labelObject.isLabeled = False
+        else: # did not drag (can not retrieve degree)
+            refreshScreen()
 
 cv.destroyWindow('Main')
 np.savetxt(str(path_csv), data,fmt='%d',delimiter='\t')
