@@ -71,7 +71,7 @@ class VideoProcessor:
         print(f"VideoProcessor : Video Info : {self.num_frame:05d}frames : {int(np.floor(time_sec/60)):d} m {int(np.remainder(time_sec,60)):d} s")
 
     def buildForegroundModel(self):
-        self.istream.buildForegroundModel()
+        self.istream.buildForegroundModel(verbose=True)
 
     def checkStartPosition(self):
         """

@@ -43,7 +43,7 @@ class ROI_image_stream():
         else:
             self.global_mask = 255 * np.ones(self.frame_size, dtype=np.uint8)
 
-    def buildForegroundModel(self, num_frames2use = 200):
+    def buildForegroundModel(self, num_frames2use = 200, verbose=False):
         """
         buildForegroundModel : build a foreground model for initial movement detection
         ----------------------------------------------------------------------------------------
@@ -100,6 +100,11 @@ class ROI_image_stream():
         self.animalConvexity = {'median': np.median(animalConvexity), 'sd': np.std(animalConvexity)}
         self.animalCircularity = {'median': np.median(animalCircularity), 'sd': np.std(animalCircularity)}
 
+        if verbose:
+            print(f'Foreground Model built.')
+            print(f'Animal Size : {self.animalSize["median"]:.2f} ({self.animalSize["sd"]:.2f})')
+            print(f'Animal Convexity : {self.animalConvexity["median"]:.2f} ({self.animalConvexity["sd"]:.2f})')
+            print(f'Animal Circularity : {self.animalCircularity["median"]:.2f} ({self.animalCircularity["sd"]:.2f})')
         self.pastFrameImage = self.getFrame(0)
 
         self.isForegroundModelBuilt = True
@@ -265,8 +270,9 @@ class ROI_image_stream():
     def drawROI(self, frame_number):
         img = self.getFrame(frame_number)
         ROIcenter = self.getROIImage(frame_number)[1]
-        cv.rectangle(img, [ROIcenter[1]-self.half_ROI_size, ROIcenter[0]-self.half_ROI_size], [ROIcenter[1]+self.half_ROI_size, ROIcenter[0]+self.half_ROI_size])
-        return img
+        cv.rectangle(img, [ROIcenter[1]-self.half_ROI_size, ROIcenter[0]-self.half_ROI_size], [ROIcenter[1]+self.half_ROI_size, ROIcenter[0]+self.half_ROI_size], (255,0,0), 3)
+        cv.imshow('Frame', img)
+        cv.waitKey()
 
     def drawFrame(self, frame_number):
         """
