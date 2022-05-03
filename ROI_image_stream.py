@@ -1,13 +1,15 @@
-import cv2 as cv
-import numpy as np
-from scipy.stats import norm
-import matplotlib.pyplot as plt
-from pathlib import Path
-from tqdm import tqdm
-from threading import Thread
-from queue import Queue
-import time
 from collections import deque
+from queue import Queue
+from threading import Thread
+import time
+
+import cv2 as cv
+import matplotlib.pyplot as plt
+import numpy as np
+from pathlib import Path
+from scipy.stats import norm
+from tqdm import tqdm
+import warnings
 
 class ROI_image_stream():
     def __init__(self,path_data, ROI_size, setMask=True):
@@ -70,9 +72,10 @@ class ROI_image_stream():
         animalConvexity = np.zeros(num_frames2use)
         animalCircularity = np.zeros(num_frames2use)
 
+        noContourFoundIndex = []
         for i in tqdm(np.arange(num_frames2use)):
             image = cv.cvtColor(cv.absdiff(frameStorage[:,:,:,i], self.medianFrame), cv.COLOR_RGB2GRAY)
-            animalThreshold[i] = np.quantile(image, 0.99) # consider only the top 1% of the intensity as the forground object.
+            animalThreshold[i] = np.quantile(image, 0.99) # consider only the top 1% of the intensity as the foreground object.
             binaryImage = cv.threshold(image,animalThreshold[i], 255, cv.THRESH_BINARY)[1]
             denoisedBinaryImage = self.__denoiseBinaryImage(binaryImage)
             # Find the largest contour
@@ -84,6 +87,10 @@ class ROI_image_stream():
                 if area > maxCntSize:
                     maxCntSize = area
                     maxCntIndex = j
+            # if no contour is found, skip
+            if len(cnts) == 0:
+                noContourFoundIndex.append(i)
+                continue
             # Draw contours to the initial foreground model
             self.foregroundModel[:,:,:,i] = cv.drawContours(self.foregroundModel[:,:,:,i].astype(np.uint8), cnts, maxCntIndex, (255,0,0))
 
@@ -93,6 +100,13 @@ class ROI_image_stream():
             animalSize[i] = area
             animalConvexity[i] = area / cv.contourArea(cv.convexHull(cnts[maxCntIndex]))
             animalCircularity[i] = 4 * np.pi * area / (perimeter ** 2)
+
+        # Delete frames where no contour is found
+        if len(noContourFoundIndex) != 0:
+            animalThreshold = np.delete(animalThreshold, noContourFoundIndex)
+            animalSize = np.delete(animalSize, noContourFoundIndex)
+            animalConvexity = np.delete(animalConvexity, noContourFoundIndex)
+            animalCircularity = np.delete(animalCircularity, noContourFoundIndex)
 
         self.animalThreshold = np.median(animalThreshold)
         self.animalSize = {'median': np.median(animalSize), 'sd': np.std(animalSize)}
@@ -330,7 +344,7 @@ class ROI_image_stream():
         parse the path of the video. if not found or multiple files are found, evoke an error
         """
         if path_data.is_file():
-            if path_data.suffix in ['.mkv', '.avi', '.mp4']: # path is video.mkv
+            if path_data.suffix in ['.mkv', '.avi', '.mp4', '.mpg']: # path is video.mkv
                 return path_data
             else:
                 raise(BaseException(f'ROI_image_stream : Following file is not a supported video type : {path_data.suffix}'))
@@ -339,6 +353,7 @@ class ROI_image_stream():
             vidlist.extend([i for i in path_data.glob('*.mkv')])
             vidlist.extend([i for i in path_data.glob('*.avi')])
             vidlist.extend([i for i in path_data.glob('*.mp4')])
+            vidlist.extend([i for i in path_data.glob('*.mpg')])
             if len(vidlist) == 0:
                 raise(BaseException(f'ROI_image_stream : Can not find video in {path_data}'))
             elif len(vidlist) > 1:

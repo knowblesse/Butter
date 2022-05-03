@@ -178,6 +178,8 @@ class VideoProcessor:
                 video_path = next(save_path.glob('*.avi'))
             elif sorted(save_path.glob('*.mp4')):
                 video_path = next(save_path.glob('*.mp4'))
+            elif sorted(save_path.glob('*.mpg')):
+                video_path = next(save_path.glob('*.mpg'))
             else:
                 raise(BaseException('VideoProcessor : Save path must be a file not directory'))
             txt_save_path = video_path.parent / (video_path.stem + '_buttered.csv')
