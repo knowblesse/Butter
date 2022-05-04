@@ -8,7 +8,7 @@ import numpy as np
 from NetworkTraining.checkPreviousDataset import checkPreviousDataset
 
 # Constants
-TANK_PATH = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/20JUN1/#20JUN1-200831-110125_PL')
+TANK_PATH = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21JAN2/#21JAN2-210503-180009_IL')
 base_network = 'mobilenet_v2'
 
 if base_network == 'mobilenet_v2':
@@ -23,6 +23,7 @@ vidlist = []
 vidlist.extend([i for i in TANK_PATH.glob('*.mkv')])
 vidlist.extend([i for i in TANK_PATH.glob('*.avi')])
 vidlist.extend([i for i in TANK_PATH.glob('*.mp4')])
+vidlist.extend([i for i in TANK_PATH.glob('*.mpg')])
 if len(vidlist) == 0:
     raise(BaseException(f'ReLabeler : Can not find video in {TANK_PATH}'))
 elif len(vidlist) > 1:
@@ -146,10 +147,10 @@ while key!=ord('q'):
     cv.imshow('Main', labelObject.image)
     key = cv.waitKey(1)
     if key == ord('a'): # backward 0 min
-        current_label_index = int(np.max([0, current_label_index - (60*lps)]))
+        current_label_index = int(np.max([0, current_label_index - (10*lps)]))
         refreshScreen()
     elif key == ord('f'): # forward 1 min
-        current_label_index = int(np.min([data.shape[0]-1, current_label_index + (60*lps)]))
+        current_label_index = int(np.min([data.shape[0]-1, current_label_index + (10*lps)]))
         refreshScreen()
     elif key == ord('s'): # backward 1 label
         current_label_index = int(np.max([0, current_label_index - 1]) )

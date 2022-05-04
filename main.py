@@ -5,10 +5,11 @@ from VideoProcessor import VideoProcessor
 import numpy as np
 
 # Path for the folder which has the video
-video_path = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21AUG3/21AUG3-211026-171617')
+video_path = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21JAN2/#21JAN2-210503-180009_IL')
+
 
 # Path for the model folder 
-model_path = Path('/home/knowblesse/VCF/butter/Models/butterNet_V2')
+model_path = Path('/home/knowblesse/VCF/butter/Models/butterNet_V2_2')
 
 # Create VideoProcessor Instance
 vp = VideoProcessor(video_path, model_path)

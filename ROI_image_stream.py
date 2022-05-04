@@ -24,7 +24,8 @@ class ROI_image_stream():
         self.path_video = self.__readVideoPath(path_data)
         self.vc = cv.VideoCapture(str(self.path_video))
         self.frame_size = (int(self.vc.get(cv.CAP_PROP_FRAME_HEIGHT)), int(self.vc.get(cv.CAP_PROP_FRAME_WIDTH)))
-        self.num_frame = self.getFrameCount()
+        self.num_frame = int(self.vc.get(cv.CAP_PROP_FRAME_COUNT))
+        self.cur_header = 0
 
         # stream status 
         self.isForegroundModelBuilt = False
@@ -38,7 +39,7 @@ class ROI_image_stream():
 
         # Set Mask
         if setMask:
-            mask_position = cv.selectROI('Select ROI', self.getFrame(0))
+            mask_position = cv.selectROI('Select ROI', self.getFrame(0, applyGlobalMask=False))
             cv.destroyWindow('Select ROI')
             self.global_mask = np.zeros(self.frame_size, dtype=np.uint8)
             self.global_mask[mask_position[1]:mask_position[1]+mask_position[3], mask_position[0]:mask_position[0]+mask_position[2]] = 255
@@ -54,9 +55,27 @@ class ROI_image_stream():
         # Read and Store Multiple Frames and Extract Initial image for background model
         print('ROI_image_stream : Acquiring frames to analyze')
         frameStorage = np.zeros((self.frame_size[0], self.frame_size[1], 3, num_frames2use), dtype=np.uint8)
-        for i, frame in enumerate(tqdm(np.round(np.linspace(0, self.num_frame-1, num_frames2use)).astype(int))):
-            image = self.getFrame(frame, applyGlobalMask=True)
-            frameStorage[:,:,:,i] = image
+        self._rewindPlayHeader()
+        EOF = False
+        lastSuccessFrame = None
+        for i, frame_number in enumerate(tqdm(np.round(np.linspace(0, self.num_frame-1, num_frames2use)).astype(int))):
+            while self.cur_header != frame_number+1:
+                ret, frame = self.vc.read()
+                self.cur_header += 1
+                if not ret:
+                    if frame_number == self.num_frame-1: 
+                        # if this is the last frame to retrieve, then the set(cv.CAP_PROP_FRAME_COUNT)
+                        # might return the wrong value.
+                        self.num_frame = self.cur_header - 1
+                        print(f'ROI_image_stream : total frame number is wrong. Calibrated to {self.num_frame}')
+                        frame = lastSuccessFrame
+                        break
+                    else:
+                        print(f'ROI_image_stream : Failed to retrieve frame from {self.cur_header}')
+                else:
+                    lastSuccessFrame = frame
+            frame = cv.bitwise_and(frame, frame, mask=self.global_mask)
+            frameStorage[:,:,:,i] = frame
         self.medianFrame = np.median(frameStorage,axis=3).astype(np.uint8)
         self.foregroundModel = frameStorage
 
@@ -123,38 +142,52 @@ class ROI_image_stream():
 
         self.isForegroundModelBuilt = True
 
-    def getFrame(self, frame_number, applyGlobalMask=False):
+    def _rewindPlayHeader(self):
+        """
+        _rewindPlayHeader : rewind the play header of the VideoCapture object
+        """
+        self.vc.set(cv.CAP_PROP_POS_FRAMES, 0)
+        if self.vc.get(cv.CAP_PROP_POS_FRAMES) != 0:
+            raise(BaseException('ROI_image_stream : Can not set the play header to the beginning'))
+        self.cur_header = 0
+
+    def getFrame(self, frame_number, applyGlobalMask = True):
         """
         getFrame : return original frame
         -------------------------------------------------------------------------------------
         frame_number : int : frame to process
-        applyGlobalMask : bool : if true, the global mask, set from the beginning, is applied
+        *Notice : this code, which look through the whole video from the beginning looks very
+        inefficient, but it guarantee the retrieved frame is accurate. See opencv's Issue #9053
         -------------------------------------------------------------------------------------
         returns frame 
         """
-        self.vc.set(cv.CAP_PROP_POS_FRAMES, frame_number)
-        ret, image = self.vc.read()
-        if not ret:
-            raise(BaseException(f'ROI_image_stream : Can not retrieve frame # {frame_number}'))
+        # check if the input is int
+        if type(frame_number) is not int:
+            raise(BaseException('ROI_image_stream : frame_number must be an integer'))
+        self._rewindPlayHeader()
+        image = None
+        while self.cur_header != frame_number+1:
+            ret, image = self.vc.read()
+            if not ret:
+                raise(BaseException(f'ROI_image_stream : Can not retrieve frame # {frame_number}'))
+            else:
+                self.cur_header += 1
         if applyGlobalMask:
             image = cv.bitwise_and(image, image, mask=self.global_mask)
         return image
 
-
-    def startROIextractionThread(self, frame_number_array):
+    def startROIextractionThread(self, start_frame, stride=5):
         """
         startROIextractionThread : start ROI extraction Thread for continuous processing.
             When called, two thread (video read and opencv ROI detection) is initiated.
             Processed ROI is stored in self.blobQ
         --------------------------------------------------------------------------------
-        frame_number_array : 1D array : frame numbers to process
+        stride : integer : The function read one frame from from every (stride) number of frames
         """
         # Video IO Thread and Queue
         self.frameQ = Queue(maxsize=200)
-        self.frame_number_array = frame_number_array
-        self.vcIOthread = Thread(target=self.__readVideo, args=())
+        self.vcIOthread = Thread(target=self.__readVideo, args=(start_frame, stride,))
         self.vcIOthread.daemon = True # indicate helper thread
-        self.frame_number_array_idx = 0
         if not self.vcIOthread.isAlive():
             self.vcIOthread.start()
 
@@ -167,22 +200,29 @@ class ROI_image_stream():
 
         self.isMultithreading = True
 
-    def __readVideo(self):
+    def __readVideo(self, start_frame, stride):
         """
-        __readVideo : multithreading. read video, extract frame listed in self.frame_number_array and store in self.frameQ
+        __readVideo : multithreading. read video, extract frame and store in self.frameQ
         """
         print('ROI_image_stream : Video IO Thread started\n')
+        self._rewindPlayHeader()
+        for i in range(start_frame):
+            ret = self.vc.grab()
+            self.cur_header += 1
         while True:
             if not self.frameQ.full():
-                frame_number = self.frame_number_array[self.frame_number_array_idx]
-                image = self.getFrame(frame_number, applyGlobalMask=True)
-                self.frameQ.put((frame_number, image))
-                self.frame_number_array_idx += 1
+                if self.cur_header >= self.num_frame:
+                    break
+                ret, frame = self.vc.read()
+                self.cur_header += 1
+                frame = cv.bitwise_and(frame, frame, mask=self.global_mask)
+                self.frameQ.put((self.cur_header-1, frame))
+                # skip other frames
+                for i in range(stride-1):
+                    ret = self.vc.grab()
+                    self.cur_header += 1
             else:
                 time.sleep(0.1)
-            # Check if all frames are added.
-            if self.frame_number_array_idx >= self.frame_number_array.shape[0]:
-                break
         print('ROI_image_stream : Video IO Thread stopped\n')
 
     def __processFrames(self):
@@ -301,20 +341,6 @@ class ROI_image_stream():
         cv.imshow('Frame', image)
         cv.waitKey()
 
-    def getFrameCount(self):
-        """
-        getFrameCount : get frame size from the VideoCapture object.
-            I can not trust vid.get(cv.CAP_PROP_FRAME_COUNT), because sometime I can't retrieve the last frame with vid.read()
-        """
-        num_frame = int(self.vc.get(cv.CAP_PROP_FRAME_COUNT))
-        self.vc.set(cv.CAP_PROP_POS_FRAMES, num_frame-1)
-        ret, _ = self.vc.read()
-        while not ret:
-            num_frame -= 1
-            self.vc.set(cv.CAP_PROP_POS_FRAMES, num_frame)
-            ret, _ = self.vc.read()
-        return num_frame
-
     def getFPS(self):
         return self.vc.get(cv.CAP_PROP_FPS)
 
@@ -379,7 +405,7 @@ class ROI_image_stream():
             raise(BaseException('BackgroundSubtractor is not trained'))
 
         if frame_number != -1: # frame_number is provided
-            image = self.getFrame(frame_number, applyGlobalMask=True)
+            image = self.getFrame(frame_number)
             detected_blob = self.__findBlob(image)
 
         else: # frame number is not provided

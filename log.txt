@@ -1,4 +1,14 @@
 ****************************************************************
+22MAY04
+**************************************************************** 
+* Problem in cv2.VideoCapture.set(cv2.CAP_PROP_POS,frame_number)
+    - According to the OpenCV Issue #9053, moving the play header to a specific frame with the
+        "set" function does not guarantee the result.
+    - However, until now, there was no issue when the frame was called sequentially using the
+        read or grab function. 
+    - So I changed all frame getting functions to sequentially call grab function until
+        the play header is on the target frame, and retrieve the frame with the read function.
+****************************************************************
 22APR21
 **************************************************************** 
 * Working Model Complete
@@ -15,6 +25,11 @@
             MAE(incl. all data) : 10.49
         - butterNet_V2 :
             MAE(incl. all data) : 5.04 
+        - butterNet_V2_1 :
+            MAE(incl. all data) : 4.48 
+        - butterNet_V2_2 :
+            MAE(incl. all data) : 5.23 (last 10% 6.58)
+
 * /NetworkTraining/loadDataset.py dataset parsing method changed
     - load the dataset image and csv file always raised the error, 
         if the python console is in a wrong location.

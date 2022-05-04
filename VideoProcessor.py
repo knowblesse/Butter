@@ -65,14 +65,14 @@ class VideoProcessor:
 
         # Print Video Info
         self.process_fps = process_fps
-        self.num_frame = self.istream.getFrameCount()
+        self.num_frame = self.istream.num_frame
         self.fps = self.istream.getFPS()
         time_sec = self.num_frame / self.fps
         print(f"VideoProcessor : Video Info : {self.num_frame:05d}frames : {int(np.floor(time_sec/60)):d} m {int(np.remainder(time_sec,60)):d} s")
 
     def buildForegroundModel(self):
         self.istream.buildForegroundModel(verbose=True)
-
+        self.num_frame = self.istream.num_frame
     def checkStartPosition(self):
         """
         Find out starting position.
@@ -111,7 +111,7 @@ class VideoProcessor:
         cumerror = 0
 
         # set for multiprocessing. reading frame automatically starts from this function
-        self.istream.startROIextractionThread(np.arange(self.start_frame, self.num_frame, self.process_fps))
+        self.istream.startROIextractionThread(self.start_frame)
 
         for idx, frameNumber in enumerate(tqdm(np.arange(self.start_frame, self.num_frame, self.process_fps))):
             try:
@@ -141,7 +141,6 @@ class VideoProcessor:
                                                                     axis=1)
 
         # Run for the last batch
-        print(f'Batch size : {len(roi_batch)}')
         batch = ROI(*zip(*roi_batch.popall()))
         testing = tf.keras.applications.mobilenet_v2.preprocess_input(np.array(batch.image))
         result = self.model.predict(testing)
