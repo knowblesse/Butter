@@ -6,6 +6,7 @@ import time
 
 from pathlib import Path
 import numpy as np
+from numpy.random import default_rng
 
 import tensorflow as tf
 from tensorflow import keras
@@ -36,6 +37,13 @@ for gpu in gpus:
 # X_conv : converted to match the network input format
 #          specifically, processed_data = original_data/127.5-1
 X_conv, y = loadDataset.loadDataset()
+
+# Shuffle
+rng = default_rng()
+shuffled_idx = rng.permutation(list(np.arange(X_conv.shape[0])))
+
+X_conv = X_conv[shuffled_idx, :, :, :]
+y = y[shuffled_idx, :]
 
 ################################################################
 # Build Model - Base model
@@ -84,12 +92,12 @@ def scheduler(epoch, lr):
         return lr * tf.math.exp(-0.01)
 
 learningRateScheduler = LearningRateScheduler(scheduler)
-es = EarlyStopping(monitor='val_loss', min_delta=5e-3, patience=30, restore_best_weights=True)
+es = EarlyStopping(monitor='val_loss', min_delta=5e-3, patience=50, restore_best_weights=True)
 
 new_model.save_weights('default_weights.h5')
 
 batch_size = 32
-momentum = 0.6
+momentum = 0.8
 
 model_name = 'Model_' + datetime.now().strftime('%y%m%d_%H%M')
 os.mkdir(model_name)
@@ -98,7 +106,7 @@ new_model.load_weights('default_weights.h5')
 optimizer = keras.optimizers.RMSprop(learning_rate=1e-5, momentum=momentum)
 new_model.compile(optimizer=optimizer, loss='mae', metrics='mae')
 start_time = time.time()
-history = new_model.fit(X_conv,y,epochs=2000, verbose=1, callbacks=[learningRateScheduler, es], validation_split=0.2, batch_size=batch_size)
+history = new_model.fit(X_conv,y,epochs=2000, verbose=1, callbacks=[learningRateScheduler, es], validation_split=0.3, batch_size=batch_size)
 
 # Save Model
 print('Saving...')

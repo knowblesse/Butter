@@ -15,7 +15,7 @@ from keras import metrics
 
 from loadDataset import loadDataset
 
-model_path = Path('/home/ubuntu/VCF/butter/NetworkTraining/Model_220422_1349')
+model_path = Path('/home/ubuntu/VCF/butter/NetworkTraining/Model_220504_1730')
 try:
     model = keras.models.load_model(str(model_path))
 except:
@@ -27,7 +27,7 @@ print(Path('../NetworkTraining/Dataset/Dataset.csv').absolute())
 y_pred = []
 done = False
 idx = 0
-stride = 20
+stride = 200
 
 for i in tqdm(range(int(np.ceil(X_conv.shape[0]/stride)))):
     if idx+stride >= X_conv.shape[0]:
@@ -41,4 +41,5 @@ for i in tqdm(range(int(np.ceil(X_conv.shape[0]/stride)))):
 y_pred = np.array(y_pred)
 
 loss = metrics.mean_absolute_error(y, y_pred)
-print(f'Model Loss (mae) : {np.round(np.mean(loss),2)}')
+print(f'Model Loss (mae) : {np.round(np.mean(loss),2):.2f}')
+print(f'Model Loss (mae) on last 10% data : {np.round(np.mean(loss[int(loss.shape[0]*0.9):]),2):.2f}')
