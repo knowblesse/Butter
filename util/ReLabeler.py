@@ -3,12 +3,12 @@ Read the video and buttered csv data, check, and relabel if necessary
 """
 from pathlib import Path
 import cv2 as cv
-from ROI_image_stream import vector2degree
+from butterUtil import vector2degree
 import numpy as np
-from NetworkTraining.checkPreviousDataset import checkPreviousDataset
+from NetworkTraining.checkPreviousDataset import checkPreviousDatddaset
 
 # Constants
-TANK_PATH = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21JAN2/#21JAN2-210503-180009_IL')
+TANK_PATH = Path(r'D:\Data\Lobster\Lobster_Recording-200319-161008\20JUN1\#20JUN1-200901-105519_PL')
 base_network = 'mobilenet_v2'
 
 if base_network == 'mobilenet_v2':

@@ -434,13 +434,3 @@ class ROI_image_stream():
 
 class BlobDetectionFailureError(Exception):
     """Error class for blob detection"""
-
-def vector2degree(r1,c1,r2,c2):
-    # diagonal line
-    l = ((r1 - r2) ** 2 + (c1 - c2) ** 2) ** 0.5
-    # temporal degree value
-    temp_deg = np.rad2deg(np.arccos((c2 - c1) / l))
-    # if r1 <= r2, then [0, 180) degree = temp_deg
-    # if r1 > r2, then [180. 360) degree = 360 - temp_deg
-    deg = 360 * np.array(r1 > r2, dtype=int) + (np.array(r1 <= r2, dtype=int) - np.array(r1 > r2, dtype=int)) * temp_deg
-    return np.round(deg).astype(np.int)

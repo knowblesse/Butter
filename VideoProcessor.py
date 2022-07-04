@@ -8,17 +8,20 @@ Process new video and return row,col coordinates with head direction
 - Outputs
     - row, col, degree 2D np matrix
 """
-from ROI_image_stream import *
-import numpy as np
-import tensorflow as tf
-from tensorflow import keras
-import cv2 as cv
-import matplotlib.pyplot as plt
-import pathlib
-from pathlib import Path
-from tqdm import tqdm
 from queue import Queue
 from collections import namedtuple
+
+import cv2 as cv
+import matplotlib.pyplot as plt
+import numpy as np
+import pathlib
+from pathlib import Path
+import tensorflow as tf
+from tensorflow import keras
+from tqdm import tqdm
+
+from ROI_image_stream import *
+from butterUtil import vector2degree
 
 class VideoProcessor:
     """
@@ -31,9 +34,9 @@ class VideoProcessor:
         process_fps : int : number of frame to process per second. 
         """
 
-        if not(type(video_path) is pathlib.PosixPath):
+        if not(type(video_path) is pathlib.PosixPath or pathlib.WindowsPath):
             raise(BaseException('VideoProcessor : video_path should be pathlib.Path object'))
-        if not(type(model_path) is pathlib.PosixPath):
+        if not(type(model_path) is pathlib.PosixPath or pathlib.WindowsPath):
             raise(BaseException('VideoProcessor : model_path should be pathlib.Path object'))
         self.video_path = video_path
         self.model_path = model_path
