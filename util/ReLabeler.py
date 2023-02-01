@@ -5,10 +5,11 @@ from pathlib import Path
 import cv2 as cv
 from butterUtil import vector2degree
 import numpy as np
-from NetworkTraining.checkPreviousDataset import checkPreviousDatddaset
+from NetworkTraining.checkPreviousDataset import checkPreviousDataset
+from tkinter.filedialog import askdirectory
 
 # Constants
-TANK_PATH = Path(r'D:\Data\Lobster\Lobster_Recording-200319-161008\20JUN1\#20JUN1-200901-105519_PL')
+TANK_PATH = Path(askdirectory())
 base_network = 'mobilenet_v2'
 
 if base_network == 'mobilenet_v2':
@@ -47,7 +48,12 @@ current_label_index = 0
 
 # Load the Dataset data to append new data directly.
 datasetLocation = Path('./').absolute().parent/'NetworkTraining/Dataset'
-(dataset_csv, dataset_number) = checkPreviousDataset(datasetLocation = datasetLocation)
+if datasetLocation.is_dir():
+    (dataset_csv, dataset_number) = checkPreviousDataset(datasetLocation = datasetLocation)
+    enableAddNewData = True
+else:
+    enableAddNewData = False
+
 
 # Find the excursion
 velocity = ((data[1:,1] - data[0:-1,1]) ** 2 + (data[1:,2] - data[0:-1,2]) ** 2) ** 0.5
@@ -171,8 +177,9 @@ while key!=ord('q'):
         current_label_index = foundExcursionIndex
         refreshScreen()
     elif key == ord('g'):
-        dataset_csv = saveROIData(dataset_csv)
-        print('Relabeler : Saved!')
+        if enableAddNewData:
+            dataset_csv = saveROIData(dataset_csv)
+            print('Relabeler : Saved!')
     if labelObject.isLabeled:
         if not (labelObject.start_coordinate == labelObject.end_coordinate):
             try:
