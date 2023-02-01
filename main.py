@@ -2,14 +2,13 @@ import datetime
 import time
 from pathlib import Path
 from VideoProcessor import VideoProcessor
-import numpy as np
+from tkinter.filedialog import askdirectory
 
 # Path for the folder which has the video
-video_path = Path('/mnt/Data/Data/Lobster/Lobster_Recording-200319-161008/21JAN2/#21JAN2-210503-180009_IL')
-
+video_path = Path(askdirectory())
 
 # Path for the model folder 
-model_path = Path('/home/knowblesse/VCF/butter/Models/butterNet_V2_2')
+model_path = Path('./Model/Model_230201_1649')
 
 # Create VideoProcessor Instance
 vp = VideoProcessor(video_path, model_path)
