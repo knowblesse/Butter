@@ -188,7 +188,7 @@ class ROI_image_stream():
         self.frameQ = Queue(maxsize=200)
         self.vcIOthread = Thread(target=self.__readVideo, args=(start_frame, stride,))
         self.vcIOthread.daemon = True # indicate helper thread
-        if not self.vcIOthread.isAlive():
+        if not self.vcIOthread.is_alive():
             self.vcIOthread.start()
 
         # ROI detection Thread and Queue
@@ -231,7 +231,7 @@ class ROI_image_stream():
         """
         print('ROI_image_stream : ROI extraction Thread started\n')
         # run until frameQ is empty and thread is dead 
-        while not(self.frameQ.empty()) or self.vcIOthread.isAlive():
+        while not(self.frameQ.empty()) or self.vcIOthread.is_alive():
             if not self.blobQ.full():
                 frame_number, image = self.frameQ.get()
                 detected_blob = self.__findBlob(image, prevPoint=self.prevPoint)

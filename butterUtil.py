@@ -21,7 +21,7 @@ def vector2degree(r1,c1,r2,c2):
     # if r1 <= r2, then [0, 180) degree = temp_deg
     # if r1 > r2, then [180. 360) degree = 360 - temp_deg
     deg = 360 * np.array(r1 > r2, dtype=int) + (np.array(r1 <= r2, dtype=int) - np.array(r1 > r2, dtype=int)) * temp_deg
-    return np.round(deg).astype(np.int)
+    return np.round(deg).astype(int)
 
 def interpolateButterData(data):
     """

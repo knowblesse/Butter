@@ -34,9 +34,9 @@ class VideoProcessor:
         process_fps : int : number of frame to process per second. 
         """
 
-        if not(type(video_path) is pathlib.PosixPath or pathlib.WindowsPath):
+        if not(issubclass(type(video_path), Path)):
             raise(BaseException('VideoProcessor : video_path should be pathlib.Path object'))
-        if not(type(model_path) is pathlib.PosixPath or pathlib.WindowsPath):
+        if not(issubclass(type(video_path), Path)):
             raise(BaseException('VideoProcessor : model_path should be pathlib.Path object'))
         self.video_path = video_path
         self.model_path = model_path
@@ -110,7 +110,7 @@ class VideoProcessor:
         roi_batch = ROI_Batch(self.predictBatchSize)
         if not self.isStartPositionChecked:
             raise(BaseException('VideoProcessor : check Start Position First!'))
-        self.output_data = np.zeros((np.arange(self.start_frame, self.num_frame, self.process_fps).shape[0],4), dtype=np.int)
+        self.output_data = np.zeros((np.arange(self.start_frame, self.num_frame, self.process_fps).shape[0],4), dtype=int)
         cumerror = 0
 
         # set for multiprocessing. reading frame automatically starts from this function
@@ -132,14 +132,14 @@ class VideoProcessor:
                 result = self.model.predict(testing)
                 if self.isHeadDetectionEnabled:
                     self.output_data[batch.idx, :] = np.concatenate((np.expand_dims(batch.frameNumber, 1), (
-                                np.array(batch.coor) + result[:, :2] - int(self.ROI_size / 2)).astype(np.int),
+                                np.array(batch.coor) + result[:, :2] - int(self.ROI_size / 2)).astype(int),
                                                                      np.expand_dims(
                                                                          vector2degree(result[:, 0], result[:, 1],
                                                                                        result[:, 2], result[:, 3]), 1)),
                                                                     axis=1)
                 else:
                     self.output_data[batch.idx, :] = np.concatenate((np.expand_dims(batch.frameNumber, 1), (
-                                np.array(batch.coor) + result[:, :2] - int(self.ROI_size / 2)).astype(np.int),
+                                np.array(batch.coor) + result[:, :2] - int(self.ROI_size / 2)).astype(int),
                                                                      np.expand_dims(np.ones(result.shape[0]), 1)),
                                                                     axis=1)
 
@@ -149,14 +149,14 @@ class VideoProcessor:
         result = self.model.predict(testing)
         if self.isHeadDetectionEnabled:
             self.output_data[batch.idx, :] = np.concatenate((np.expand_dims(batch.frameNumber, 1), (
-                    np.array(batch.coor) + result[:, :2] - int(self.ROI_size / 2)).astype(np.int),
+                    np.array(batch.coor) + result[:, :2] - int(self.ROI_size / 2)).astype(int),
                                                              np.expand_dims(
                                                                  vector2degree(result[:, 0], result[:, 1],
                                                                                result[:, 2], result[:, 3]), 1)),
                                                             axis=1)
         else:
             self.output_data[batch.idx, :] = np.concatenate((np.expand_dims(batch.frameNumber, 1), (
-                    np.array(batch.coor) + result[:, :2] - int(self.ROI_size / 2)).astype(np.int),
+                    np.array(batch.coor) + result[:, :2] - int(self.ROI_size / 2)).astype(int),
                                                              np.expand_dims(np.ones(result.shape[0]), 1)),
                                                             axis=1)
 
