@@ -5,10 +5,10 @@ from pathlib import Path
 import cv2 as cv
 import numpy as np
 from tqdm import tqdm
-
+from tkinter.filedialog import askdirectory
 from butterUtil import interpolateButterData
 # Constants
-TANK_PATH = Path('D:/Data/Lobster/Lobster_Recording-200319-161008/20JUN1/#20JUN1-200814-120239_PL')
+TANK_PATH = Path(askdirectory())
 
 # Find the path to the video
 vidlist = []
@@ -63,8 +63,12 @@ for i in tqdm(np.arange(num_frame)):
     ret, image = vid.read()
     if not ret:
         raise(BaseException('Can not read the frame'))
-    cv.circle(image, (round(data_intp[i,2]), round(data_intp[i,1])), 3, [0,0,255], -1 )
-    cv.line(image, (round(data_intp[i,2]), round(data_intp[i,1])), (round(data_intp[i,2] + 30*np.cos(np.deg2rad(data_intp[i,3]))), round(data_intp[i,1] + 30*np.sin(np.deg2rad(data_intp[i,3])))), [0,255,255], 2)
+
+    idx = np.where(i==data_intp[:,0])[0]
+    if idx.shape[0] != 0: # skip last several frames (can not do extrapolation)
+        idx = idx[0]
+        cv.circle(image, (round(data_intp[idx,2]), round(data_intp[idx,1])), 3, [0,0,255], -1 )
+        cv.line(image, (round(data_intp[idx,2]), round(data_intp[idx,1])), (round(data_intp[idx,2] + 30*np.cos(np.deg2rad(data_intp[idx,3]))), round(data_intp[idx,1] + 30*np.sin(np.deg2rad(data_intp[idx,3])))), [0,255,255], 2)
     vid_out.write(image)
 
 vid_out.release()

@@ -23,11 +23,12 @@ def vector2degree(r1,c1,r2,c2):
     deg = 360 * np.array(r1 > r2, dtype=int) + (np.array(r1 <= r2, dtype=int) - np.array(r1 > r2, dtype=int)) * temp_deg
     return np.round(deg).astype(int)
 
-def interpolateButterData(data):
+def interpolateButterData(data, num_frame):
     """
     Generate interpolated butter data.
     -----------------------------------------------------------------------------------------------
     data : ndarray(n x 3) : data of the labeled butter data
+    num_frame : int : number of total frame (ex. 300 -> query frames from 0 to 299
     -----------------------------------------------------------------------------------------------
     This function generate butter datapoints to all frames using interpolation method.
     However, first, the head direction value must be fixed.
@@ -58,11 +59,13 @@ def interpolateButterData(data):
     intp_y = interp1d(data[:, 0], data[:, 2], kind='linear')
     intp_d = interp1d(data[:, 0], np.convolve(data[:, 3] + degree_offset_value, np.ones(5), 'same') / 5, kind='linear')
 
-    # Get num_frame
-    num_frame = data[-1, 0]
+    queryFrameNumbers = np.array(np.arange(
+        int(np.max([0, data[0, 0]])),
+        int(np.min([num_frame, data[-1, 0]]))
+    ))
 
-    data_intp = np.stack([np.array(np.arange(num_frame)),
-                          intp_x(np.array(np.arange(num_frame))),
-                          intp_y(np.array(np.arange(num_frame))),
-                          intp_d(np.array(np.arange(num_frame)))], axis=1)
+    data_intp = np.stack([queryFrameNumbers,
+                          intp_x(queryFrameNumbers),
+                          intp_y(queryFrameNumbers),
+                          intp_d(queryFrameNumbers)], axis=1)
     return data_intp
