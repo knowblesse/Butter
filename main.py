@@ -8,7 +8,7 @@ from tkinter.filedialog import askdirectory
 video_path = Path(askdirectory())
 
 # Path for the model folder 
-model_path = Path('./Model/Model_230201_1649')
+model_path = Path('./Models/Model_230201_1649')
 
 # Create VideoProcessor Instance
 vp = VideoProcessor(video_path, model_path)
