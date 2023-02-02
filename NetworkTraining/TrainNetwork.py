@@ -18,7 +18,7 @@ from tensorflow.keras.callbacks import EarlyStopping
 import loadDataset
 
 # Tensorflow version test
-if tf.__version__ < '2.5.0':
+if tf.__version__ != '2.10.0':
     print(tf.__version__)
     print("this code is build on tensorflow=2.5.0")
     raise(BaseException('Tensorflow version mismatch!'))
