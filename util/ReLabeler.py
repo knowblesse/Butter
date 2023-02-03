@@ -1,12 +1,17 @@
 """
 Read the video and buttered csv data, check, and relabel if necessary
 """
+import sys
 from pathlib import Path
 import cv2 as cv
-from butterUtil import vector2degree
-import numpy as np
-from NetworkTraining.checkPreviousDataset import checkPreviousDataset
 from tkinter.filedialog import askdirectory
+import numpy as np
+import sys
+from pathlib import Path
+print(str(Path('.').absolute().parent))
+sys.path.append(str(Path('.').absolute().parent))
+from NetworkTraining.checkPreviousDataset import checkPreviousDataset
+from butterUtil import vector2degree
 
 # Constants
 TANK_PATH = Path(askdirectory())
@@ -47,7 +52,7 @@ lps = fps/data[1,0] # labels per second
 current_label_index = 0
 
 # Load the Dataset data to append new data directly.
-datasetLocation = Path('./').absolute().parent/'NetworkTraining/Dataset'
+datasetLocation = Path('.').absolute().parent/'NetworkTraining/Dataset'
 if datasetLocation.is_dir():
     (dataset_csv, dataset_number) = checkPreviousDataset(datasetLocation = datasetLocation)
     enableAddNewData = True
