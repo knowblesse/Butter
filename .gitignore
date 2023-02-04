@@ -11,3 +11,5 @@ NetworkTraining/Dataset/*
 # Image Dataset
 __pycache__/
 
+
+Dataset/

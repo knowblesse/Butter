@@ -6,10 +6,10 @@ from pathlib import Path
 import cv2 as cv
 from tkinter.filedialog import askdirectory
 import numpy as np
+
 import sys
 from pathlib import Path
-print(str(Path('.').absolute().parent))
-sys.path.append(str(Path('.').absolute().parent))
+sys.path.append(str(Path(__file__).absolute().parent.parent))
 from NetworkTraining.checkPreviousDataset import checkPreviousDataset
 from butterUtil import vector2degree
 
@@ -52,13 +52,16 @@ lps = fps/data[1,0] # labels per second
 current_label_index = 0
 
 # Load the Dataset data to append new data directly.
-datasetLocation = Path('.').absolute().parent/'NetworkTraining/Dataset'
+datasetLocation = Path(__file__).absolute().parent.parent/'NetworkTraining/Dataset'
+(dataset_csv, dataset_number) = checkPreviousDataset(datasetLocation = datasetLocation)
+enableAddNewData = True
+"""
 if datasetLocation.is_dir():
     (dataset_csv, dataset_number) = checkPreviousDataset(datasetLocation = datasetLocation)
     enableAddNewData = True
 else:
     enableAddNewData = False
-
+"""
 
 # Find the excursion
 velocity = ((data[1:,1] - data[0:-1,1]) ** 2 + (data[1:,2] - data[0:-1,2]) ** 2) ** 0.5
@@ -72,7 +75,7 @@ def getFrame(label_index):
     ret, image = vid.read()
     if not ret:
         raise(BaseException('Can not read the frame'))
-    cv.putText(image, f'{current_frame} - {label_index/data.shape[0]*100:.2f}% - Excursion {np.sum(possibleExcursion)} - ({data[label_index, 1]}, {data[label_index, 2]})', [0,int(vid.get(cv.CAP_PROP_FRAME_HEIGHT)-10)],fontFace=cv.FONT_HERSHEY_DUPLEX, fontScale=0.6, color=[255,255,255], thickness=1)
+    cv.putText(image, f'{current_frame} - {label_index/data.shape[0]*100:.2f}% - Excursion {np.sum(possibleExcursion)} - ({data[label_index, 1]}, {data[label_index, 2]}) - {enableAddNewData}', [0,int(vid.get(cv.CAP_PROP_FRAME_HEIGHT)-10)],fontFace=cv.FONT_HERSHEY_DUPLEX, fontScale=0.6, color=[255,255,255], thickness=1)
     cv.putText(image, 'a/f : +-1 min | s/d : +-1 label | e : error frame | w : excursion | q : quit', [0,15], fontFace=cv.FONT_HERSHEY_SIMPLEX, fontScale=0.5, color=[255,255,255], thickness=1)
     if data[label_index,1] != -1:
         cv.circle(image, (round(data[label_index,2]), round(data[label_index,1])), 3, [0,0,255], -1 )

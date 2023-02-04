@@ -12,9 +12,15 @@ If user intentionally delete some pictures, then corresponding data in .csv file
 import numpy as np
 from pathlib import Path
 import re
+import os
 
-def checkPreviousDataset(datasetLocation = Path('./Dataset/'), silent=False):
-    if datasetLocation.is_dir(): # Dataset file exist
+def checkPreviousDataset(datasetLocation = Path(__file__).absolute().parent / 'Dataset', silent=False):
+    print(datasetLocation)
+    if not datasetLocation.is_dir():
+        print('checkPreviousDataset : Dataset folder does not exist. Creating one')
+        os.mkdir(datasetLocation)
+
+    if (datasetLocation / 'Dataset.csv').is_file(): # Dataset file exist
         # Check data number from CSV
         dataset_csv = np.loadtxt(str(next(datasetLocation.glob('*.csv'))), delimiter=',')
 
