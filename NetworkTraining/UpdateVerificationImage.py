@@ -15,6 +15,8 @@ import os
 if not (Path(__file__).absolute().parent / 'Dataset/Verification').is_dir():
     print('UpdateVerificationImage : Verification folder does not exist. Creating one')
     os.mkdir(Path(__file__).absolute().parent / 'Dataset/Verification')
+for path in (Path(__file__).absolute().parent / 'Dataset/Verification').glob('*.png'):
+    os.remove(path)
 dataset_image = [x for x in sorted((Path(__file__).absolute().parent / 'Dataset').glob('*.png'))]
 for i, image_path in enumerate(dataset_image):
     img = cv.imread(str(image_path))
