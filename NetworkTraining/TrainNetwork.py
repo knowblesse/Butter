@@ -10,17 +10,16 @@ from numpy.random import default_rng
 
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras import Model
-from tensorflow.keras import layers
-from tensorflow.keras.callbacks import LearningRateScheduler
-from tensorflow.keras.callbacks import EarlyStopping
+from Model import createNewButterModelv1
+
+from keras.callbacks import LearningRateScheduler, EarlyStopping, CSVLogger
 
 import loadDataset
 
 # Tensorflow version test
 if tf.__version__ != '2.10.0':
     print(tf.__version__)
-    print("this code is build on tensorflow=2.5.0")
+    print("this code is build on tensorflow=2.10.0")
     raise(BaseException('Tensorflow version mismatch!'))
 
 if tf.test.is_gpu_available():
@@ -45,75 +44,56 @@ shuffled_idx = rng.permutation(list(np.arange(X_conv.shape[0])))
 X_conv = X_conv[shuffled_idx, :, :, :]
 y = y[shuffled_idx, :]
 
-################################################################
-# Build Model - Base model
-################################################################
-base_model = keras.applications.MobileNetV2(input_shape=X_conv.shape[1:], include_top=False, weights='imagenet')
-base_model.trainable = False
+new_model = createNewButterModelv1(X_conv)
 
 ################################################################
-# Build Model - Linker model
+# Hyperparameters
 ################################################################
-l2_MaxP = layers.MaxPooling2D(pool_size=(3, 3))(base_model.get_layer('block_2_add').output)
-l5_ConvT = layers.Conv2DTranspose(32, kernel_size=(3, 3), strides=(2, 2), padding='same')(base_model.get_layer('block_5_add').output)
-l5_MaxP = layers.MaxPooling2D(pool_size=(3, 3))(l5_ConvT)
-l12_ConvT = layers.Conv2DTranspose(32, kernel_size=(3,3), strides=(4, 4), padding='valid', output_padding=(1, 1))(base_model.get_layer('block_12_add').output)
-l12_MaxP = layers.MaxPooling2D(pool_size=(3, 3), padding='valid')(l12_ConvT)
-linker_input = keras.layers.concatenate([l2_MaxP, l5_MaxP, l12_MaxP])
-linker_output = keras.layers.Flatten()(linker_input)
+batch_size = 32
+momentum = 0.8
+initial_learning_rate = 1e-5
+epochs = 10
 
 ################################################################
-# Build Model - FC model
+# Make Folder
 ################################################################
-
-FC = keras.layers.Dropout(0.2, name='FC_DO1')(linker_output)
-FC = keras.layers.Dense(500, activation='relu', name='FC_1')(FC)
-FC = keras.layers.Dropout(0.2, name='FC_DO2')(FC)
-FC = keras.layers.Dense(200, activation='relu', name='FC_2')(FC)
-FC = keras.layers.Dense(4, activation='linear',name='FC_3')(FC)
-
-################################################################
-# Compile and Train
-################################################################
-
-new_model = Model(inputs=base_model.input, outputs=FC)
+model_name = 'Model_' + datetime.now().strftime('%y%m%d_%H%M%S')
+ModelsParentPath = Path(__file__).absolute().parent.parent / 'Models'
+if not ModelsParentPath.is_dir():
+    raise BaseException("Can not locate 'Models' folder")
+ModelPath_str = str((ModelsParentPath / model_name).absolute())
+os.mkdir(ModelPath_str)
 
 ################################################################
 # Callbacks
 ################################################################
-
 def scheduler(epoch, lr):
     """
     Callback function for adaptive learning rate change
     """
     if epoch < 60:
-        return 1e-5
+        return initial_learning_rate
     else:
         return lr * tf.math.exp(-0.01)
 
 learningRateScheduler = LearningRateScheduler(scheduler)
 es = EarlyStopping(monitor='val_loss', min_delta=5e-3, patience=50, restore_best_weights=True)
+csv_logger = CSVLogger(ModelPath_str + '\history.csv')
 
-new_model.save_weights('default_weights.h5')
-
-batch_size = 32
-momentum = 0.8
-
-model_name = 'Model_' + datetime.now().strftime('%y%m%d_%H%M')
-os.mkdir(model_name)
-new_model.load_weights('default_weights.h5')
-
-optimizer = keras.optimizers.RMSprop(learning_rate=1e-5, momentum=momentum)
+################################################################
+# Compile and run
+################################################################
+optimizer = keras.optimizers.RMSprop(learning_rate=initial_learning_rate, momentum=momentum)
 new_model.compile(optimizer=optimizer, loss='mae', metrics='mae')
 start_time = time.time()
-history = new_model.fit(X_conv,y,epochs=2000, verbose=1, callbacks=[learningRateScheduler, es], validation_split=0.3, batch_size=batch_size)
+history = new_model.fit(X_conv,y,epochs=epochs, verbose=1, callbacks=[learningRateScheduler, es, csv_logger], validation_split=0.3, batch_size=batch_size)
 
+################################################################
 # Save Model
+################################################################
 print('Saving...')
-with open('history_' + model_name + '.pickle', 'wb') as f:
-    pickle.dump(history, f, pickle.HIGHEST_PROTOCOL)
-new_model.save(Path(model_name))
-print(f'Saved {model_name}')
+new_model.save(ModelPath_str)
+print(f'Saved {ModelPath_str}')
 print('Elapsed time : ' + str(timedelta(seconds=time.time() - start_time)))
 print('Best Score : ' + str(min(history.history['val_mae']))) 
 
