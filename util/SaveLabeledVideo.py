@@ -1,12 +1,16 @@
 """
 Read the video and buttered csv data, Label each frame using interpolation, and save it into a video
 """
-from pathlib import Path
 import cv2 as cv
 import numpy as np
 from tqdm import tqdm
 from tkinter.filedialog import askdirectory
+
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).absolute().parent.parent))
 from butterUtil import interpolateButterData
+
 # Constants
 TANK_PATH = Path(askdirectory())
 
