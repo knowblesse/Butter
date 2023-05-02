@@ -45,9 +45,22 @@ class ROI_image_stream():
         else:
             self.global_mask = 255 * np.ones(self.frame_size, dtype=np.uint8)
 
-    def buildForegroundModel(self, num_frames2use = 200, verbose=False):
+    def setForegroundModel(self, animalThreshold, p2pDisplacement, animalSize, animalConvexity, animalCircularity):
+        # Run this fisrt to obtain self.sampleFrames
+        self.buildBackgroundModel()
+
+        self.animalThreshold = animalThreshold
+        self.p2pDisplacement = p2pDisplacement
+        self.animalSize = animalSize
+        self.animalConvexity = animalConvexity
+        self.animalCircularity = animalCircularity
+
+        self.pastFrameImage = self.getFrame(0)
+        self.isForegroundModelBuilt = True
+
+    def buildBackgroundModel(self, num_frames2use = 200):
         """
-        buildForegroundModel : build a foreground model for initial movement detection
+        buildBackgroundModel : build a background model
         ----------------------------------------------------------------------------------------
         num_frames2use : int : number of frames to use for building the foreground model
         """
@@ -55,14 +68,14 @@ class ROI_image_stream():
         print('ROI_image_stream : Acquiring frames to analyze')
         frameStorage = np.zeros((self.frame_size[0], self.frame_size[1], 3, num_frames2use), dtype=np.uint8)
         self._rewindPlayHeader()
-        EOF = False
         lastSuccessFrame = None
-        for i, frame_number in enumerate(tqdm(np.round(np.linspace(0, self.num_frame-1, num_frames2use)).astype(int))):
-            while self.cur_header != frame_number+1:
+        for i, frame_number in enumerate(
+                tqdm(np.round(np.linspace(0, self.num_frame - 1, num_frames2use)).astype(int))):
+            while self.cur_header != frame_number + 1:
                 ret, frame = self.vc.read()
                 self.cur_header += 1
                 if not ret:
-                    if frame_number == self.num_frame-1: 
+                    if frame_number == self.num_frame - 1:
                         # if this is the last frame to retrieve, then the set(cv.CAP_PROP_FRAME_COUNT)
                         # might return the wrong value.
                         self.num_frame = self.cur_header - 1
@@ -74,16 +87,27 @@ class ROI_image_stream():
                 else:
                     lastSuccessFrame = frame
             frame = cv.bitwise_and(frame, frame, mask=self.global_mask)
-            frameStorage[:,:,:,i] = frame
-        self.medianFrame = np.median(frameStorage,axis=3).astype(np.uint8)
-        self.foregroundModel = frameStorage
+            frameStorage[:, :, :, i] = frame
+        self.medianFrame = np.median(frameStorage, axis=3).astype(np.uint8)
+        self.sampleFrames = frameStorage
+        self.isBackgroundModelBuilt = True
 
+    def buildForegroundModel(self, num_frames2use = 200, verbose=False):
+        """
+        buildForegroundModel : build a foreground model for initial movement detection
+        ----------------------------------------------------------------------------------------
+        num_frames2use : int : number of frames to use for building the foreground model
+        """
         # Build a foreground Model
         """
         Run through sufficient number of frames to calculate proper size and the threshold of the foreground model.
         Later, the value computed from this psudo-foreground object will be used to detect the foreground object.
         """
+        # Run this before to obtain self.sampleFrames
+        self.buildBackgroundModel()
+
         print('ROI_image_stream : Initial Foreground Model building...')
+        time.sleep(1)
 
         animalSize = np.zeros(num_frames2use)
         animalThreshold = np.zeros(num_frames2use)
@@ -92,7 +116,7 @@ class ROI_image_stream():
 
         noContourFoundIndex = []
         for i in tqdm(np.arange(num_frames2use)):
-            image = cv.cvtColor(cv.absdiff(frameStorage[:,:,:,i], self.medianFrame), cv.COLOR_RGB2GRAY)
+            image = cv.cvtColor(cv.absdiff(self.sampleFrames[:,:,:,i], self.medianFrame), cv.COLOR_RGB2GRAY)
             animalThreshold[i] = np.quantile(image, 0.99) # consider only the top 1% of the intensity as the foreground object.
             binaryImage = cv.threshold(image,animalThreshold[i], 255, cv.THRESH_BINARY)[1]
             denoisedBinaryImage = self.__denoiseBinaryImage(binaryImage)
@@ -110,7 +134,7 @@ class ROI_image_stream():
                 noContourFoundIndex.append(i)
                 continue
             # Draw contours to the initial foreground model
-            self.foregroundModel[:,:,:,i] = cv.drawContours(self.foregroundModel[:,:,:,i].astype(np.uint8), cnts, maxCntIndex, (255,0,0))
+            self.sampleFrames[:,:,:,i] = cv.drawContours(self.sampleFrames[:,:,:,i].astype(np.uint8), cnts, maxCntIndex, (255,0,0))
 
             # Calculate feature information from the largest contour
             area = cv.contourArea(cnts[maxCntIndex])
@@ -134,6 +158,8 @@ class ROI_image_stream():
 
         if verbose:
             print(f'Foreground Model built.')
+            print(f'Animal Threshold : {self.animalThreshold:.2f}')
+            print(f'Animal p2p Displacement : {self.p2pDisplacement["median"]:.2f} ({self.p2pDisplacement["sd"]:.2f})')
             print(f'Animal Size : {self.animalSize["median"]:.2f} ({self.animalSize["sd"]:.2f})')
             print(f'Animal Convexity : {self.animalConvexity["median"]:.2f} ({self.animalConvexity["sd"]:.2f})')
             print(f'Animal Circularity : {self.animalCircularity["median"]:.2f} ({self.animalCircularity["sd"]:.2f})')

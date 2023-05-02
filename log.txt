@@ -1,4 +1,12 @@
 ****************************************************************
+23MAY02
+**************************************************************** 
+* Minor Updates
+    - 'v' function added. Quickly enter previous coordinate
+    - Removed dependency to matplotlib. Buggy when it uses weird backend
+    - Testing "skipping foreground model building part by manually providing the parameter.
+
+****************************************************************
 22MAY04
 **************************************************************** 
 * Problem in cv2.VideoCapture.set(cv2.CAP_PROP_POS,frame_number)
