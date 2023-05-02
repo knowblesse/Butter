@@ -157,6 +157,8 @@ def saveROIData(dataset_csv):
     print(f'ReLabeler : New data is appended. Now total {dataset_csv.shape[0]:d} data is in the dataset')
     return dataset_csv
 
+# Last manual label
+lastManualLabel = []
 while key!=ord('q'):
     cv.imshow('Main', labelObject.image)
     key = cv.waitKey(1)
@@ -188,6 +190,12 @@ while key!=ord('q'):
         if enableAddNewData:
             dataset_csv = saveROIData(dataset_csv)
             print('Relabeler : Saved!')
+    elif key == ord('v'):
+        if lastManualLabel:
+            labelObject.isLabeled = True
+            labelObject.start_coordinate = lastManualLabel[0]
+            labelObject.end_coordinate = lastManualLabel[1]
+
     if labelObject.isLabeled:
         if not (labelObject.start_coordinate == labelObject.end_coordinate):
             try:
@@ -198,6 +206,7 @@ while key!=ord('q'):
                     labelObject.start_coordinate[0],
                     labelObject.end_coordinate[1],
                     labelObject.end_coordinate[0])
+                lastManualLabel = [labelObject.start_coordinate, labelObject.end_coordinate]
                 labelObject.initialize(getFrame(current_label_index))
             except IndexError :
                 labelObject.isLabeled = False
