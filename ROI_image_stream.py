@@ -4,7 +4,6 @@ from threading import Thread
 import time
 
 import cv2 as cv
-import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
 from scipy.stats import norm

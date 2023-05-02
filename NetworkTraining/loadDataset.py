@@ -2,7 +2,6 @@ import cv2 as cv
 import numpy as np
 from pathlib import Path
 from tensorflow import keras
-import matplotlib.pyplot as plt
 
 def loadDataset(path=None):
     ################################################################

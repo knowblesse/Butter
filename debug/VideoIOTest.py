@@ -1,7 +1,6 @@
 import ffmpeg
 import numpy as np
 import cv2 as cv
-import matplotlib.pyplot as plt
 from pathlib import Path
 from ROI_image_stream import *
 

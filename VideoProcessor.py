@@ -12,7 +12,6 @@ from queue import Queue
 from collections import namedtuple
 
 import cv2 as cv
-import matplotlib.pyplot as plt
 import numpy as np
 import pathlib
 from pathlib import Path
@@ -73,6 +72,9 @@ class VideoProcessor:
         time_sec = self.num_frame / self.fps
         print(f"VideoProcessor : Video Info : {self.num_frame:05d}frames : {int(np.floor(time_sec/60)):d} m {int(np.remainder(time_sec,60)):d} s")
 
+    def setForegroundModel(self, animalThreshold, p2pDisplacement, animalSize, animalConvexity, animalCircularity):
+        self.istream.setForegroundModel(animalThreshold, p2pDisplacement, animalSize, animalConvexity, animalCircularity)
+        self.num_frame = self.istream.num_frame
     def buildForegroundModel(self):
         self.istream.buildForegroundModel(verbose=True)
         self.num_frame = self.istream.num_frame
@@ -94,11 +96,11 @@ class VideoProcessor:
                 else:
                     break
             print(f'VideoProcessor : Frame {start_frame:d}')
-            plt.imshow(chosen_image)
-            plt.title(str(start_frame))
-            plt.pause(1)
+            cv.imshow('First Image Detection', chosen_image)
+            cv.waitKey(1)
             prompt = int(input('VideoProcessor : Found? (0: Found, not zero: skip frame)'))
             if prompt == 0 :
+                cv.destroyWindow('First Image Detection')
                 break
             else:
                 start_frame += int(self.process_fps * prompt)
@@ -129,7 +131,7 @@ class VideoProcessor:
             if roi_batch.full():
                 batch = ROI(*zip(*roi_batch.popall()))
                 testing = tf.keras.applications.mobilenet_v2.preprocess_input(np.array(batch.image))
-                result = self.model.predict(testing)
+                result = self.model.predict(testing, verbose=0)
                 if self.isHeadDetectionEnabled:
                     self.output_data[batch.idx, :] = np.concatenate((np.expand_dims(batch.frameNumber, 1), (
                                 np.array(batch.coor) + result[:, :2] - int(self.ROI_size / 2)).astype(int),
