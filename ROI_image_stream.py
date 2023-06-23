@@ -1,14 +1,11 @@
-from collections import deque
 from queue import Queue
 from threading import Thread
 import time
-
 import cv2 as cv
 import numpy as np
 from pathlib import Path
 from scipy.stats import norm
 from tqdm import tqdm
-import warnings
 
 class ROI_image_stream():
     def __init__(self,path_data, ROI_size, setMask=True):
@@ -16,7 +13,7 @@ class ROI_image_stream():
         __init__ : initialize ROI image extraction stream object
         ****************************************************************
         path_data : Path object : path of the video or a folder containing the video
-        ROI_size : weight/height of the extracting ROI. This must be an even number.
+        ROI_size : width/height of the extracting ROI. This must be an even number.
         setMask : if True, ROI selection screen appears.
         """
         # Setup VideoCapture
@@ -58,6 +55,10 @@ class ROI_image_stream():
         self.pastFrameImage = self.getFrame(0)
         self.isForegroundModelBuilt = True
 
+    def setBackgroundModel(self):
+        # TODO 
+        return 0
+
     def buildBackgroundModel(self, num_frames2use = 200):
         """
         buildBackgroundModel : build a background model
@@ -72,6 +73,7 @@ class ROI_image_stream():
         for i, frame_number in enumerate(
                 tqdm(np.round(np.linspace(0, self.num_frame - 1, num_frames2use)).astype(int))):
             while self.cur_header != frame_number + 1:
+                # TODO: Use grab instead 
                 ret, frame = self.vc.read()
                 self.cur_header += 1
                 if not ret:
@@ -167,15 +169,6 @@ class ROI_image_stream():
 
         self.isForegroundModelBuilt = True
 
-    def _rewindPlayHeader(self):
-        """
-        _rewindPlayHeader : rewind the play header of the VideoCapture object
-        """
-        self.vc.set(cv.CAP_PROP_POS_FRAMES, 0)
-        if self.vc.get(cv.CAP_PROP_POS_FRAMES) != 0:
-            raise(BaseException('ROI_image_stream : Can not set the play header to the beginning'))
-        self.cur_header = 0
-
     def getFrame(self, frame_number, applyGlobalMask = True):
         """
         getFrame : return original frame
@@ -225,6 +218,78 @@ class ROI_image_stream():
 
         self.isMultithreading = True
 
+    def drawROI(self, frame_number):
+        img = self.getFrame(frame_number)
+        ROIcenter = self.getROIImage(frame_number)[1]
+        cv.rectangle(img, [ROIcenter[1]-self.half_ROI_size, ROIcenter[0]-self.half_ROI_size], [ROIcenter[1]+self.half_ROI_size, ROIcenter[0]+self.half_ROI_size], (255,0,0), 3)
+        cv.imshow('Frame', img)
+        cv.waitKey()
+
+    def drawFrame(self, frame_number):
+        """
+        drawFrame : draw original frame
+        --------------------------------------------------------------------------------
+        frame_number : int : frame to process
+        """
+        image = self.getFrame(frame_number)
+
+        cv.putText(image,f'Frame : {frame_number:.0f}', [0, int(image.shape[0] - 1)], fontFace=cv.FONT_HERSHEY_DUPLEX, fontScale=0.8,
+                   color=[255, 255, 255], thickness=1)
+        cv.imshow('Frame', image)
+        cv.waitKey()
+
+    def getROIImage(self, frame_number=-1):
+        """
+        extractROIImage : return ROI frame from the video
+            frame_number can be omitted if the class uses multithreading.
+            In that case, self.startROIextractionThread function must be called prior to this func.
+            If frame_number is not provided and the multithreading is not enabled, returns error.
+        -------------------------------------------------------------------------------- 
+        frame_number : int or int numpy array : frame to process
+        ---------------------------------------------------------------- 
+        outputFrame : 3D numpy array : ROI frame  
+        center : (r,c) : location of the center of the blob
+        """
+        if not self.isForegroundModelBuilt:
+            raise(BaseException('BackgroundSubtractor is not trained'))
+
+        if frame_number != -1: # frame_number is provided
+            image = self.getFrame(frame_number)
+            detected_blob = self.__findBlob(image)
+
+        else: # frame number is not provided
+            if not self.isMultithreading: # if multithreading is not used
+                raise(TypeError('getROIImage() missing 1 required positional argument: \'frame_number\'\n'
+                                'If you are trying to use this function as multithreading, check if you called startROIextractionThread()'))
+            frame_number, image, detected_blob = self.blobQ.get()
+
+        if detected_blob is None:
+            raise(BlobDetectionFailureError('No Blob'))
+
+        blob_center_row = detected_blob[1]
+        blob_center_col = detected_blob[0]
+
+        # Create expanded version of the original image.
+        # In this way, we can prevent errors when center of the ROI is near the boarder of the image.
+        expanded_image = cv.copyMakeBorder(image, self.half_ROI_size, self.half_ROI_size, self.half_ROI_size,
+                                           self.half_ROI_size,
+                                           cv.BORDER_CONSTANT, value=[0, 0, 0])
+
+        chosen_image = expanded_image[
+                       blob_center_row - self.half_ROI_size + self.half_ROI_size : blob_center_row + self.half_ROI_size + self.half_ROI_size,
+                       blob_center_col - self.half_ROI_size + self.half_ROI_size : blob_center_col + self.half_ROI_size + self.half_ROI_size,:]
+
+        return (chosen_image, [blob_center_row, blob_center_col])
+
+    def _rewindPlayHeader(self):
+        """
+        _rewindPlayHeader : rewind the play header of the VideoCapture object
+        """
+        self.vc.set(cv.CAP_PROP_POS_FRAMES, 0)
+        if self.vc.get(cv.CAP_PROP_POS_FRAMES) != 0:
+            raise(BaseException('ROI_image_stream : Can not set the play header to the beginning'))
+        self.cur_header = 0
+
     def __readVideo(self, start_frame, stride):
         """
         __readVideo : multithreading. read video, extract frame and store in self.frameQ
@@ -266,6 +331,7 @@ class ROI_image_stream():
             else:
                 time.sleep(0.1)
         print('ROI_image_stream : ROI extraction Thread stopped\n')
+
 
     def __findBlob(self, image, prevPoint=None):
         """
@@ -346,34 +412,6 @@ class ROI_image_stream():
 
         return centers[np.argmax(likelihoods)]
 
-    def drawROI(self, frame_number):
-        img = self.getFrame(frame_number)
-        ROIcenter = self.getROIImage(frame_number)[1]
-        cv.rectangle(img, [ROIcenter[1]-self.half_ROI_size, ROIcenter[0]-self.half_ROI_size], [ROIcenter[1]+self.half_ROI_size, ROIcenter[0]+self.half_ROI_size], (255,0,0), 3)
-        cv.imshow('Frame', img)
-        cv.waitKey()
-
-    def drawFrame(self, frame_number):
-        """
-        drawFrame : draw original frame
-        --------------------------------------------------------------------------------
-        frame_number : int : frame to process
-        """
-        image = self.getFrame(frame_number)
-
-        cv.putText(image,f'Frame : {frame_number:.0f}', [0, int(image.shape[0] - 1)], fontFace=cv.FONT_HERSHEY_DUPLEX, fontScale=0.8,
-                   color=[255, 255, 255], thickness=1)
-        cv.imshow('Frame', image)
-        cv.waitKey()
-
-    def getFPS(self):
-        return self.vc.get(cv.CAP_PROP_FPS)
-
-    def getKernel(self, size):
-        size = int(size)
-        return cv.getStructuringElement(cv.MORPH_ELLIPSE, (size, size),
-                                        ((int((size - 1) / 2), int((size - 1) / 2))))
-
     def __denoiseBinaryImage(self, binaryImage):
         """
         __denoiseBinaryImage : remove small artifacts from the binary Image using the cv.morphologyEx function
@@ -383,11 +421,11 @@ class ROI_image_stream():
         # opening -> delete noise : erode and dilate
         # closing -> make into big object : dilate and erode
         denoisedBinaryImage = binaryImage
-        denoisedBinaryImage = cv.morphologyEx(denoisedBinaryImage, cv.MORPH_OPEN, self.getKernel(3))
-        denoisedBinaryImage = cv.morphologyEx(denoisedBinaryImage, cv.MORPH_OPEN, self.getKernel(5))
-        denoisedBinaryImage = cv.morphologyEx(denoisedBinaryImage, cv.MORPH_CLOSE, self.getKernel(10))
-        # denoisedBinaryImage = cv.morphologyEx(denoisedBinaryImage, cv.MORPH_OPEN, self.getKernel(7))
-        # denoisedBinaryImage = cv.morphologyEx(denoisedBinaryImage, cv.MORPH_OPEN, self.getKernel(12))
+        denoisedBinaryImage = cv.morphologyEx(denoisedBinaryImage, cv.MORPH_OPEN, self.__getKernel(3))
+        denoisedBinaryImage = cv.morphologyEx(denoisedBinaryImage, cv.MORPH_OPEN, self.__getKernel(5))
+        denoisedBinaryImage = cv.morphologyEx(denoisedBinaryImage, cv.MORPH_CLOSE, self.__getKernel(10))
+        # denoisedBinaryImage = cv.morphologyEx(denoisedBinaryImage, cv.MORPH_OPEN, self.__getKernel(7))
+        # denoisedBinaryImage = cv.morphologyEx(denoisedBinaryImage, cv.MORPH_OPEN, self.__getKernel(12))
         return denoisedBinaryImage
 
     def __readVideoPath(self, path_data):
@@ -414,48 +452,12 @@ class ROI_image_stream():
         else:
             raise(BaseException(f'ROI_image_stream : Can not find video file in {path_data}'))
 
-    def getROIImage(self, frame_number=-1):
-        """
-        extractROIImage : return ROI frame from the video
-            frame_number can be omitted if the class uses multithreading.
-            In that case, self.startROIextractionThread function must be called prior to this func.
-            If frame_number is not provided and the multithreading is not enabled, returns error.
-        -------------------------------------------------------------------------------- 
-        frame_number : int or int numpy array : frame to process
-        ---------------------------------------------------------------- 
-        outputFrame : 3D numpy array : ROI frame  
-        center : (r,c) : location of the center of the blob
-        """
-        if not self.isForegroundModelBuilt:
-            raise(BaseException('BackgroundSubtractor is not trained'))
+    def __getKernel(self, size):
+        size = int(size)
+        return cv.getStructuringElement(cv.MORPH_ELLIPSE, (size, size),
+                                        ((int((size - 1) / 2), int((size - 1) / 2))))
 
-        if frame_number != -1: # frame_number is provided
-            image = self.getFrame(frame_number)
-            detected_blob = self.__findBlob(image)
 
-        else: # frame number is not provided
-            if not self.isMultithreading: # if multithreading is not used
-                raise(TypeError('getROIImage() missing 1 required positional argument: \'frame_number\'\n'
-                                'If you are trying to use this function as multithreading, check if you called startROIextractionThread()'))
-            frame_number, image, detected_blob = self.blobQ.get()
-
-        if detected_blob is None:
-            raise(BlobDetectionFailureError('No Blob'))
-
-        blob_center_row = detected_blob[1]
-        blob_center_col = detected_blob[0]
-
-        # Create expanded version of the original image.
-        # In this way, we can prevent errors when center of the ROI is near the boarder of the image.
-        expanded_image = cv.copyMakeBorder(image, self.half_ROI_size, self.half_ROI_size, self.half_ROI_size,
-                                           self.half_ROI_size,
-                                           cv.BORDER_CONSTANT, value=[0, 0, 0])
-
-        chosen_image = expanded_image[
-                       blob_center_row - self.half_ROI_size + self.half_ROI_size : blob_center_row + self.half_ROI_size + self.half_ROI_size,
-                       blob_center_col - self.half_ROI_size + self.half_ROI_size : blob_center_col + self.half_ROI_size + self.half_ROI_size,:]
-
-        return (chosen_image, [blob_center_row, blob_center_col])
 
 class BlobDetectionFailureError(Exception):
     """Error class for blob detection"""
