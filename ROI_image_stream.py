@@ -8,7 +8,7 @@ from scipy.stats import norm
 from tqdm import tqdm
 
 class ROI_image_stream():
-    def __init__(self,path_data, ROI_size, setMask=True):
+    def __init__(self,path_data, ROI_size):
         """
         __init__ : initialize ROI image extraction stream object
         ****************************************************************
@@ -22,9 +22,12 @@ class ROI_image_stream():
         self.frame_size = (int(self.vc.get(cv.CAP_PROP_FRAME_HEIGHT)), int(self.vc.get(cv.CAP_PROP_FRAME_WIDTH)))
         self.num_frame = int(self.vc.get(cv.CAP_PROP_FRAME_COUNT))
         self.cur_header = 0
+        self.fps = int(self.vc.get(cv.CAP_PROP_FPS))
 
         # stream status 
+        self.sampleFrames = []
         self.isForegroundModelBuilt = False
+        self.isBackgroundModelBuilt = False
         self.isMultithreading = False
 
         # ROI size
@@ -34,91 +37,97 @@ class ROI_image_stream():
             raise(BaseException('ROI_size is not dividable with 2!'))
 
         # Set Mask
-        if setMask:
+        self.global_mask = 255 * np.ones(self.frame_size, dtype=np.uint8)
+
+    def setGlobalMask(self, mask=[]):
+        if not mask:
             mask_position = cv.selectROI('Select ROI', self.getFrame(0, applyGlobalMask=False))
             cv.destroyWindow('Select ROI')
             self.global_mask = np.zeros(self.frame_size, dtype=np.uint8)
-            self.global_mask[mask_position[1]:mask_position[1]+mask_position[3], mask_position[0]:mask_position[0]+mask_position[2]] = 255
+            self.global_mask[mask_position[1]:mask_position[1] + mask_position[3],
+            mask_position[0]:mask_position[0] + mask_position[2]] = 255
         else:
-            self.global_mask = 255 * np.ones(self.frame_size, dtype=np.uint8)
+            self.global_mask = mask
+    def getGlobalMask(self):
+        return self.global_mask
 
-    def setForegroundModel(self, animalThreshold, p2pDisplacement, animalSize, animalConvexity, animalCircularity):
-        # Run this fisrt to obtain self.sampleFrames
-        self.buildBackgroundModel()
-
-        self.animalThreshold = animalThreshold
-        self.p2pDisplacement = p2pDisplacement
-        self.animalSize = animalSize
-        self.animalConvexity = animalConvexity
-        self.animalCircularity = animalCircularity
-
+    def setForegroundModel(self, foregroundModel):
+        """
+        setForegroundModel : Manually set foreground model
+        """
+        self.foregroundModel = foregroundModel
         self.pastFrameImage = self.getFrame(0)
         self.isForegroundModelBuilt = True
 
-    def setBackgroundModel(self):
-        # TODO 
-        return 0
+    def setBackgroundModel(self, background):
+        self.background = background
+        self.isBackgroundModelBuilt = True
 
-    def buildBackgroundModel(self, num_frames2use = 200):
+    def saveSampleFrames(self, num_frames2use=200):
+        """
+        saveSampleFrames : Read and Store Multiple Frames and Extract Initial image for background model
+        """
+        # Check global mask
+        if np.all(self.global_mask == 255 * np.ones(self.frame_size, dtype=np.uint8)): # default global mask
+            print('ROI_image_stream : Warning. Currently using the default global mask')
+
+        print('ROI_image_stream : Acquiring frames to analyze')
+        self.sampleFrames = np.zeros((self.frame_size[0], self.frame_size[1], 3, num_frames2use), dtype=np.uint8)
+        self._rewindPlayHeader()
+        for i, frame_number in enumerate(
+                tqdm(np.round(np.linspace(0, self.num_frame - 1, num_frames2use)).astype(int))):
+            while self.cur_header <= frame_number:
+                if self.cur_header < frame_number: # Touch Frame
+                    ret = self.vc.grab()
+                else: # Read Frame
+                    ret, frame = self.vc.read()
+
+                if (not ret) and self.cur_header > self.num_frame-10:
+                    # if the header is nearly the end of the video and failed to retrieve a frame,
+                    # then the frame number calculated from `set(cv.CAP_PROP_FRAME_COUNT)` is wrong
+                    self.num_frame = self.cur_header
+                    print(f'ROI_image_stream : total frame number is wrong. Calibrated to {self.num_frame}')
+                elif not ret:
+                    raise(BaseException(f'ROI_image_stream : Corrupted video file. Can not get frame from {self.cur_header}'))
+                self.cur_header += 1
+            # Save
+            frame = cv.bitwise_and(frame, frame, mask=self.global_mask)
+            self.sampleFrames[:, :, :, i] = frame
+
+    def buildBackgroundModel(self):
         """
         buildBackgroundModel : build a background model
         ----------------------------------------------------------------------------------------
-        num_frames2use : int : number of frames to use for building the foreground model
         """
-        # Read and Store Multiple Frames and Extract Initial image for background model
-        print('ROI_image_stream : Acquiring frames to analyze')
-        frameStorage = np.zeros((self.frame_size[0], self.frame_size[1], 3, num_frames2use), dtype=np.uint8)
-        self._rewindPlayHeader()
-        lastSuccessFrame = None
-        for i, frame_number in enumerate(
-                tqdm(np.round(np.linspace(0, self.num_frame - 1, num_frames2use)).astype(int))):
-            while self.cur_header != frame_number + 1:
-                # TODO: Use grab instead 
-                ret, frame = self.vc.read()
-                self.cur_header += 1
-                if not ret:
-                    if frame_number == self.num_frame - 1:
-                        # if this is the last frame to retrieve, then the set(cv.CAP_PROP_FRAME_COUNT)
-                        # might return the wrong value.
-                        self.num_frame = self.cur_header - 1
-                        print(f'ROI_image_stream : total frame number is wrong. Calibrated to {self.num_frame}')
-                        frame = lastSuccessFrame
-                        break
-                    else:
-                        print(f'ROI_image_stream : Failed to retrieve frame from {self.cur_header}')
-                else:
-                    lastSuccessFrame = frame
-            frame = cv.bitwise_and(frame, frame, mask=self.global_mask)
-            frameStorage[:, :, :, i] = frame
-        self.medianFrame = np.median(frameStorage, axis=3).astype(np.uint8)
-        self.sampleFrames = frameStorage
+        # Check if sampel frames exist
+        if not len(self.sampleFrames):
+            print(f'ROI_image_stream : Sample frame does not exist. Run saveSampleFrames() to acquire frames')
+            return
+        self.background = np.median(self.sampleFrames, axis=3).astype(np.uint8)
         self.isBackgroundModelBuilt = True
 
-    def buildForegroundModel(self, num_frames2use = 200, verbose=False):
+    def buildForegroundModel(self, verbose=False):
         """
         buildForegroundModel : build a foreground model for initial movement detection
-        ----------------------------------------------------------------------------------------
-        num_frames2use : int : number of frames to use for building the foreground model
-        """
-        # Build a foreground Model
-        """
         Run through sufficient number of frames to calculate proper size and the threshold of the foreground model.
         Later, the value computed from this psudo-foreground object will be used to detect the foreground object.
+        ----------------------------------------------------------------------------------------
         """
-        # Run this before to obtain self.sampleFrames
-        self.buildBackgroundModel()
+        # Check if sampel frames exist
+        if not len(self.sampleFrames):
+            print(f'ROI_image_stream : Sample frame does not exist. Run saveSampleFrames() to acquire frames')
+            return
 
-        print('ROI_image_stream : Initial Foreground Model building...')
-        time.sleep(1)
-
-        animalSize = np.zeros(num_frames2use)
-        animalThreshold = np.zeros(num_frames2use)
-        animalConvexity = np.zeros(num_frames2use)
-        animalCircularity = np.zeros(num_frames2use)
+        # Variable to save
+        numSampleFrame = self.sampleFrames.shape[3]
+        animalSize = np.zeros(numSampleFrame)
+        animalThreshold = np.zeros(numSampleFrame)
+        animalConvexity = np.zeros(numSampleFrame)
+        animalCircularity = np.zeros(numSampleFrame)
 
         noContourFoundIndex = []
-        for i in tqdm(np.arange(num_frames2use)):
-            image = cv.cvtColor(cv.absdiff(self.sampleFrames[:,:,:,i], self.medianFrame), cv.COLOR_RGB2GRAY)
+        for i in tqdm(np.arange(numSampleFrame)):
+            image = cv.cvtColor(cv.absdiff(self.sampleFrames[:,:,:,i], self.background), cv.COLOR_RGB2GRAY)
             animalThreshold[i] = np.quantile(image, 0.99) # consider only the top 1% of the intensity as the foreground object.
             binaryImage = cv.threshold(image,animalThreshold[i], 255, cv.THRESH_BINARY)[1]
             denoisedBinaryImage = self.__denoiseBinaryImage(binaryImage)
@@ -152,23 +161,25 @@ class ROI_image_stream():
             animalConvexity = np.delete(animalConvexity, noContourFoundIndex)
             animalCircularity = np.delete(animalCircularity, noContourFoundIndex)
 
-        self.animalThreshold = np.median(animalThreshold)
-        self.animalSize = {'median': np.median(animalSize), 'sd': np.std(animalSize)}
-        self.p2pDisplacement = {'median' : 0.33 * np.sqrt(self.animalSize['median']), 'sd': 0.33 * np.sqrt(self.animalSize['median'])} # see log.txt 22MAR21
-        self.animalConvexity = {'median': np.median(animalConvexity), 'sd': np.std(animalConvexity)}
-        self.animalCircularity = {'median': np.median(animalCircularity), 'sd': np.std(animalCircularity)}
+        foregroundModel = {
+                'animalThreshold': np.median(animalThreshold),
+                'animalSize': {'median': np.median(animalSize), 'sd': np.std(animalSize)},
+                'p2pDisplacement': {'median' : 0.33 * np.sqrt(np.median(animalSize)), 'sd': 0.33 * np.sqrt(np.median(animalSize))}, # see log.txt 22MAR21
+                'animalConvexity': {'median': np.median(animalConvexity), 'sd': np.std(animalConvexity)},
+                'animalCircularity': {'median': np.median(animalCircularity), 'sd': np.std(animalCircularity)}
+                }
 
         if verbose:
-            print(f'Foreground Model built.')
-            print(f'Animal Threshold : {self.animalThreshold:.2f}')
-            print(f'Animal p2p Displacement : {self.p2pDisplacement["median"]:.2f} ({self.p2pDisplacement["sd"]:.2f})')
-            print(f'Animal Size : {self.animalSize["median"]:.2f} ({self.animalSize["sd"]:.2f})')
-            print(f'Animal Convexity : {self.animalConvexity["median"]:.2f} ({self.animalConvexity["sd"]:.2f})')
-            print(f'Animal Circularity : {self.animalCircularity["median"]:.2f} ({self.animalCircularity["sd"]:.2f})')
-        self.pastFrameImage = self.getFrame(0)
-
-        self.isForegroundModelBuilt = True
-
+            print(f"Foreground Model built.")
+            print(f"Animal Threshold : {foregroundModel['animalThreshold']:.2f}")
+            print(f"Animal p2p Displacement : {foregroundModel['p2pDisplacement']['median']:.2f} ({foregroundModel['p2pDisplacement']['sd']:.2f})")
+            print(f"Animal Size : {foregroundModel['animalSize']['median']:.2f} ({foregroundModel['animalSize']['sd']:.2f})")
+            print(f"Animal Convexity : {foregroundModel['animalConvexity']['median']:.2f} ({foregroundModel['animalConvexity']['sd']:.2f})")
+            print(f"Animal Circularity : {foregroundModel['animalCircularity']['median']:.2f} ({foregroundModel['animalCircularity']['sd']:.2f})")
+        self.pastFrameImage = self.getFrame(0) 
+        self.foregroundModel = foregroundModel
+        self.isForegroundModelBuilt = True 
+ 
     def getFrame(self, frame_number, applyGlobalMask = True):
         """
         getFrame : return original frame
@@ -219,6 +230,9 @@ class ROI_image_stream():
         self.isMultithreading = True
 
     def drawROI(self, frame_number):
+        """
+        [DEBUG]
+        """
         img = self.getFrame(frame_number)
         ROIcenter = self.getROIImage(frame_number)[1]
         cv.rectangle(img, [ROIcenter[1]-self.half_ROI_size, ROIcenter[0]-self.half_ROI_size], [ROIcenter[1]+self.half_ROI_size, ROIcenter[0]+self.half_ROI_size], (255,0,0), 3)
@@ -227,6 +241,7 @@ class ROI_image_stream():
 
     def drawFrame(self, frame_number):
         """
+        [DEBUG]
         drawFrame : draw original frame
         --------------------------------------------------------------------------------
         frame_number : int : frame to process
@@ -240,17 +255,15 @@ class ROI_image_stream():
 
     def getROIImage(self, frame_number=-1):
         """
-        extractROIImage : return ROI frame from the video
-            frame_number can be omitted if the class uses multithreading.
-            In that case, self.startROIextractionThread function must be called prior to this func.
-            If frame_number is not provided and the multithreading is not enabled, returns error.
+        [DEBUG]
+        getROIImage : run __findBlob(image)
         -------------------------------------------------------------------------------- 
         frame_number : int or int numpy array : frame to process
         ---------------------------------------------------------------- 
-        outputFrame : 3D numpy array : ROI frame  
-        center : (r,c) : location of the center of the blob
+        chosen_image : 3D numpy array : ROI frame  
+        blob_center : (r,c) : location of the center of the blob
         """
-        if not self.isForegroundModelBuilt:
+        if (not self.isForegroundModelBuilt) or (not self.isBackgroundModelBuilt):
             raise(BaseException('BackgroundSubtractor is not trained'))
 
         if frame_number != -1: # frame_number is provided
@@ -353,15 +366,15 @@ class ROI_image_stream():
         weight_recentdiff = 1 - weight_mediandiff
 
         if weight_recentdiff == 0 :
-            image = cv.absdiff(image, self.medianFrame)
+            image = cv.absdiff(image, self.background)
         else:
             image = cv.addWeighted(
-                cv.absdiff(image, self.medianFrame), weight_mediandiff,
+                cv.absdiff(image, self.background), weight_mediandiff,
                 cv.absdiff(image, self.pastFrameImage), weight_recentdiff,
                 0)
 
         image = cv.cvtColor(image, cv.COLOR_RGB2GRAY)
-        binaryImage = cv.threshold(image, self.animalThreshold, 255, cv.THRESH_BINARY)[1]
+        binaryImage = cv.threshold(image, self.foregroundModel['animalThreshold'], 255, cv.THRESH_BINARY)[1]
 
         denoisedBinaryImage = self.__denoiseBinaryImage(binaryImage)
 
@@ -380,16 +393,16 @@ class ROI_image_stream():
         animalCircularity = 4 * np.pi * area / (perimeter ** 2)
 
         L_Size = np.max([
-            norm.cdf(animalSize + self.animalSize['sd'] * 0.1, self.animalSize['median'], self.animalSize['sd'])
-            - norm.cdf(animalSize - self.animalSize['sd'] * 0.1, self.animalSize['median'], self.animalSize['sd']),
+            norm.cdf(animalSize + self.foregroundModel['animalSize']['sd'] * 0.1, self.foregroundModel['animalSize']['median'], self.foregroundModel['animalSize']['sd'])
+            - norm.cdf(animalSize - self.foregroundModel['animalSize']['sd'] * 0.1, self.foregroundModel['animalSize']['median'], self.foregroundModel['animalSize']['sd']),
             1e-10*np.ones(animalSize.shape)], axis=0)
         L_Convexity = np.max([
-            norm.cdf(animalConvexity + self.animalConvexity['sd'] * 0.1, self.animalConvexity['median'],self.animalConvexity['sd'])
-            - norm.cdf(animalConvexity - self.animalConvexity['sd'] * 0.1, self.animalConvexity['median'],self.animalConvexity['sd']),
+            norm.cdf(animalConvexity + self.foregroundModel['animalConvexity']['sd'] * 0.1, self.foregroundModel['animalConvexity']['median'],self.foregroundModel['animalConvexity']['sd'])
+            - norm.cdf(animalConvexity - self.foregroundModel['animalConvexity']['sd'] * 0.1, self.foregroundModel['animalConvexity']['median'],self.foregroundModel['animalConvexity']['sd']),
             1e-10*np.ones(animalConvexity.shape)], axis=0)
         L_Circularity = np.max([
-            norm.cdf(animalCircularity + self.animalCircularity['sd'] * 0.1, self.animalCircularity['median'],self.animalCircularity['sd'])
-            - norm.cdf(animalCircularity - self.animalCircularity['sd'] * 0.1, self.animalCircularity['median'],self.animalCircularity['sd']),
+            norm.cdf(animalCircularity + self.foregroundModel['animalCircularity']['sd'] * 0.1, self.foregroundModel['animalCircularity']['median'],self.foregroundModel['animalCircularity']['sd'])
+            - norm.cdf(animalCircularity - self.foregroundModel['animalCircularity']['sd'] * 0.1, self.foregroundModel['animalCircularity']['median'],self.foregroundModel['animalCircularity']['sd']),
             1e-10*np.ones(animalCircularity.shape)], axis=0)
 
         likelihoods = np.log(L_Size) + np.log(L_Convexity) + np.log(L_Circularity)
@@ -402,10 +415,10 @@ class ROI_image_stream():
         if prevPoint is not None:
             distance = np.sum((prevPoint - centers)**2, axis=1)**0.5
             L_Distance = np.max([
-                norm.cdf(distance + self.p2pDisplacement['sd'] * 0.1, self.p2pDisplacement['median'],
-                         self.p2pDisplacement['sd'])
-                - norm.cdf(distance - self.p2pDisplacement['sd'] * 0.1, self.p2pDisplacement['median'],
-                           self.p2pDisplacement['sd']),
+                norm.cdf(distance + self.foregroundModel['p2pDisplacement']['sd'] * 0.1, self.foregroundModel['p2pDisplacement']['median'],
+                         self.foregroundModel['p2pDisplacement']['sd'])
+                - norm.cdf(distance - self.foregroundModel['p2pDisplacement']['sd'] * 0.1, self.foregroundModel['p2pDisplacement']['median'],
+                           self.foregroundModel['p2pDisplacement']['sd']),
                 1e-10 * np.ones(distance.shape)], axis=0)  # 14.530208395578228, 13.609712279904377
             L_Distance = 0.1 * L_Distance # penalty term for fixing to a wrong location
             likelihoods += np.log(L_Distance)

@@ -1,7 +1,7 @@
 import datetime
 import time
 from pathlib import Path
-from VideoProcessor import VideoProcessor
+from Butter import VideoProcessor
 from tkinter.filedialog import askdirectory
 
 # Path for the folder which has the video
