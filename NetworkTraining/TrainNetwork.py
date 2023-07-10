@@ -50,9 +50,9 @@ new_model = createNewButterModelv1(X_conv)
 # Hyperparameters
 ################################################################
 batch_size = 64
-momentum = 0.8
+momentum = 0.85
 initial_learning_rate = 1e-5
-epochs = 100
+epochs = 300
 
 ################################################################
 # Make Folder
@@ -74,10 +74,10 @@ def scheduler(epoch, lr):
     if epoch < 10:
         return initial_learning_rate
     else:
-        return lr * tf.math.exp(-0.01)
+        return lr * tf.math.exp(-0.05)
 
 learningRateScheduler = LearningRateScheduler(scheduler)
-es = EarlyStopping(monitor='val_loss', min_delta=5e-3, patience=10, restore_best_weights=True)
+es = EarlyStopping(monitor='val_loss', min_delta=5e-3, patience=20, restore_best_weights=True)
 csv_logger = CSVLogger(Path(ModelPath_str) / 'history.csv')
 
 ################################################################
@@ -86,7 +86,14 @@ csv_logger = CSVLogger(Path(ModelPath_str) / 'history.csv')
 optimizer = keras.optimizers.RMSprop(learning_rate=initial_learning_rate, momentum=momentum)
 new_model.compile(optimizer=optimizer, loss='mae', metrics='mae')
 start_time = time.time()
-history = new_model.fit(X_conv,y,epochs=epochs, verbose=1, callbacks=[learningRateScheduler, es, csv_logger], validation_split=0.3, batch_size=batch_size)
+history = new_model.fit(
+        X_conv,
+        y,
+        epochs=epochs, 
+        verbose=1, 
+        callbacks=[learningRateScheduler, es, csv_logger], 
+        validation_split=0.1, 
+        batch_size=batch_size)
 
 ################################################################
 # Save Model

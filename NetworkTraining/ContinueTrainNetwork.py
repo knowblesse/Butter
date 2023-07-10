@@ -29,7 +29,7 @@ args.finetune = strinput2bool(args.finetune)
 ################################################################
 # Load Model
 ################################################################
-model_path = Path('/home/ainav/VCF/butter/Models/Model_230710_154207')#Path(askdirectory())
+model_path = Path('/home/ainav/VCF/butter/Models/Model_230710_193705')#Path(askdirectory())
 model = keras.models.load_model(str(model_path))
 
 history = np.loadtxt(model_path / 'history.csv', skiprows=1, delimiter=',')
@@ -43,8 +43,8 @@ X_conv, y = loadDataset.loadDataset()
 ################################################################
 # Hyperparameters
 ################################################################
-batch_size = 32
-momentum = 0.8
+batch_size = 64
+momentum = 0.85
 initial_learning_rate = 1e-8
 additional_epochs = 10
 
@@ -76,7 +76,7 @@ history = model.fit(
         verbose=1, 
         initial_epoch=last_epoch, 
         callbacks=[learningRateScheduler, es, csv_logger], 
-        validation_split=0.3, 
+        validation_split=0.1, 
         batch_size=batch_size)
 
 print('Saving...')
