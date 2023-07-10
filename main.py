@@ -9,7 +9,7 @@ from tkinter.filedialog import askdirectory
 video_path = Path(askdirectory())
 
 # Path for the model folder
-model_path = Path('./Models/Model_230201_1649')
+model_path = Path('./Models/butterNet_V2.1')
 
 # Create VideoProcessor Instance
 butter = Butter(video_path, model_path)

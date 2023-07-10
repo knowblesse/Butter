@@ -255,7 +255,6 @@ class ROI_image_stream():
 
     def getROIImage(self, frame_number=-1):
         """
-        [DEBUG]
         getROIImage : run __findBlob(image)
         -------------------------------------------------------------------------------- 
         frame_number : int or int numpy array : frame to process
@@ -470,7 +469,187 @@ class ROI_image_stream():
         return cv.getStructuringElement(cv.MORPH_ELLIPSE, (size, size),
                                         ((int((size - 1) / 2), int((size - 1) / 2))))
 
+class ROI_image_stream_noblob():
+    def __init__(self,path_data, ROI_size):
+        """
+        __init__ : initialize ROI image extraction stream object
+        ****************************************************************
+        path_data : Path object : path of the video or a folder containing the video
+        ROI_size : width/height of the extracting ROI. This must be an even number.
+        setMask : if True, ROI selection screen appears.
+        """
+        # Setup VideoCapture
+        self.path_video = self.__readVideoPath(path_data)
+        self.vc = cv.VideoCapture(str(self.path_video))
+        self.frame_size = (int(self.vc.get(cv.CAP_PROP_FRAME_HEIGHT)), int(self.vc.get(cv.CAP_PROP_FRAME_WIDTH)))
+        self.num_frame = int(self.vc.get(cv.CAP_PROP_FRAME_COUNT))
+        self.cur_header = 0
+        self.fps = int(self.vc.get(cv.CAP_PROP_FPS))
 
+        # Multithreading
+        self.isMultithreading = False
+
+        # Extra data
+        self.roiCoordinateData = []
+
+        # ROI size
+        self.ROI_size = ROI_size
+        self.half_ROI_size = int(np.round(self.ROI_size/2))
+        if ROI_size%2 != 0 :
+            raise(BaseException('ROI_size is not dividable with 2!'))
+
+        # Set Mask
+        self.global_mask = 255 * np.ones(self.frame_size, dtype=np.uint8)
+
+    def setRoiCoordinateData(self, data):
+        """
+
+        :param data: data
+            n x 3 numpy data
+            col0 : frame number
+            col1 : row
+            col2 : col
+        :return:
+        """
+        self.roiCoordinateData = data
+
+    def setGlobalMask(self, mask=[]):
+        if not mask:
+            mask_position = cv.selectROI('Select ROI', self.getFrame(0, applyGlobalMask=False))
+            cv.destroyWindow('Select ROI')
+            self.global_mask = np.zeros(self.frame_size, dtype=np.uint8)
+            self.global_mask[mask_position[1]:mask_position[1] + mask_position[3],
+            mask_position[0]:mask_position[0] + mask_position[2]] = 255
+        else:
+            self.global_mask = mask
+    def getGlobalMask(self):
+        return self.global_mask
+    def startROIextractionThread(self, start_frame, stride=5):
+        """
+        startROIextractionThread : start ROI extraction Thread for continuous processing.
+            When called, two thread (video read and opencv ROI detection) is initiated.
+            Processed ROI is stored in self.blobQ
+        --------------------------------------------------------------------------------
+        stride : integer : The function read one frame from from every (stride) number of frames
+        """
+        # Video IO Thread and Queue
+        self.frameQ = Queue(maxsize=200)
+        self.vcIOthread = Thread(target=self.__readVideo, args=(start_frame, stride,))
+        self.vcIOthread.daemon = True # indicate helper thread
+        if not self.vcIOthread.is_alive():
+            self.vcIOthread.start()
+
+        self.isMultithreading = True
+    def getROIImage(self):
+        """
+        getROIImage : run __findBlob(image)
+        ----------------------------------------------------------------
+        chosen_image : 3D numpy array : ROI frame
+        blob_center : (r,c) : location of the center of the blob
+        """
+
+        if not self.isMultithreading: # if multithreading is not used
+            raise(TypeError('getROIImage() missing 1 required positional argument: \'frame_number\'\n'
+                            'If you are trying to use this function as multithreading, check if you called startROIextractionThread()'))
+        frame_number, image = self.frameQ.get()
+
+        data_index = np.where(self.roiCoordinateData[:,0] == frame_number)[0]
+        if len(data_index) ==0 :
+            raise(BlobDetectionFailureError('No Blob'))
+
+        blob_center_row = self.roiCoordinateData[data_index[0], 1]
+        blob_center_col = self.roiCoordinateData[data_index[0], 2]
+
+        # Create expanded version of the original image.
+        # In this way, we can prevent errors when center of the ROI is near the boarder of the image.
+        expanded_image = cv.copyMakeBorder(image, self.half_ROI_size, self.half_ROI_size, self.half_ROI_size,
+                                           self.half_ROI_size,
+                                           cv.BORDER_CONSTANT, value=[0, 0, 0])
+
+        chosen_image = expanded_image[
+                       blob_center_row - self.half_ROI_size + self.half_ROI_size : blob_center_row + self.half_ROI_size + self.half_ROI_size,
+                       blob_center_col - self.half_ROI_size + self.half_ROI_size : blob_center_col + self.half_ROI_size + self.half_ROI_size,:]
+
+        return (chosen_image, [blob_center_row, blob_center_col])
+    def getFrame(self, frame_number, applyGlobalMask = True):
+        """
+        getFrame : return original frame
+        -------------------------------------------------------------------------------------
+        frame_number : int : frame to process
+        *Notice : this code, which look through the whole video from the beginning looks very
+        inefficient, but it guarantee the retrieved frame is accurate. See opencv's Issue #9053
+        -------------------------------------------------------------------------------------
+        returns frame
+        """
+        # check if the input is int
+        if type(frame_number) is not int:
+            raise(BaseException('ROI_image_stream : frame_number must be an integer'))
+        self._rewindPlayHeader()
+        image = None
+        while self.cur_header != frame_number+1:
+            ret, image = self.vc.read()
+            if not ret:
+                raise(BaseException(f'ROI_image_stream : Can not retrieve frame # {frame_number}'))
+            else:
+                self.cur_header += 1
+        if applyGlobalMask:
+            image = cv.bitwise_and(image, image, mask=self.global_mask)
+        return image
+    def _rewindPlayHeader(self):
+        """
+        _rewindPlayHeader : rewind the play header of the VideoCapture object
+        """
+        self.vc.set(cv.CAP_PROP_POS_FRAMES, 0)
+        if self.vc.get(cv.CAP_PROP_POS_FRAMES) != 0:
+            raise(BaseException('ROI_image_stream : Can not set the play header to the beginning'))
+        self.cur_header = 0
+    def __readVideoPath(self, path_data):
+        """
+        parse the path of the video. if not found or multiple files are found, evoke an error
+        """
+        if path_data.is_file():
+            if path_data.suffix in ['.mkv', '.avi', '.mp4', '.mpg']: # path is video.mkv
+                return path_data
+            else:
+                raise(BaseException(f'ROI_image_stream : Following file is not a supported video type : {path_data.suffix}'))
+        elif path_data.is_dir():
+            vidlist = []
+            vidlist.extend([i for i in path_data.glob('*.mkv')])
+            vidlist.extend([i for i in path_data.glob('*.avi')])
+            vidlist.extend([i for i in path_data.glob('*.mp4')])
+            vidlist.extend([i for i in path_data.glob('*.mpg')])
+            if len(vidlist) == 0:
+                raise(BaseException(f'ROI_image_stream : Can not find video in {path_data}'))
+            elif len(vidlist) > 1:
+                raise(BaseException(f'ROI_image_stream : Multiple video files found in {path_data}'))
+            else:
+                return vidlist[0]
+        else:
+            raise(BaseException(f'ROI_image_stream : Can not find video file in {path_data}'))
+    def __readVideo(self, start_frame, stride):
+        """
+        __readVideo : multithreading. read video, extract frame and store in self.frameQ
+        """
+        print('ROI_image_stream : Video IO Thread started\n')
+        self._rewindPlayHeader()
+        for i in range(start_frame):
+            ret = self.vc.grab()
+            self.cur_header += 1
+        while True:
+            if not self.frameQ.full():
+                if self.cur_header >= self.num_frame:
+                    break
+                ret, frame = self.vc.read()
+                self.cur_header += 1
+                frame = cv.bitwise_and(frame, frame, mask=self.global_mask)
+                self.frameQ.put((self.cur_header-1, frame))
+                # skip other frames
+                for i in range(stride-1):
+                    ret = self.vc.grab()
+                    self.cur_header += 1
+            else:
+                time.sleep(0.1)
+        print('ROI_image_stream : Video IO Thread stopped\n')
 
 class BlobDetectionFailureError(Exception):
     """Error class for blob detection"""

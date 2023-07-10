@@ -22,7 +22,7 @@ class Butter:
     """
     Process New Video. Find ROI and detect head location and degree in the ROI.
     """
-    def __init__(self, video_path, model_path, process_fps=5, predictBatchSize=100):
+    def __init__(self, video_path, model_path, process_fps=5, predictBatchSize=100, roiCoordinateData=[]):
         """
         video_path : pathlib.PosixPath(Path) : target video path
         model_path : pathlib.PosixPath(Path) : pre-trained model path
@@ -64,7 +64,13 @@ class Butter:
         self.ROI_size = model.layers[0].input.shape[1]
 
         # Train ROI_image_stream
-        self.istream = ROI_image_stream(video_path, ROI_size=self.ROI_size)
+        if len(roiCoordinateData) > 0:
+            self.istream = ROI_image_stream_noblob(video_path, ROI_size=self.ROI_size)
+            self.istream.setRoiCoordinateData(roiCoordinateData)
+            self.start_frame = roiCoordinateData[0,0]
+            self.isStartPositionChecked = True
+        else:
+            self.istream = ROI_image_stream(video_path, ROI_size=self.ROI_size)
 
         # Print Video Info
         self.process_fps = process_fps
@@ -142,7 +148,7 @@ class Butter:
         cumerror = 0
 
         # set for multiprocessing. reading frame automatically starts from this function
-        self.istream.startROIextractionThread(self.start_frame)
+        self.istream.startROIextractionThread(self.start_frame, stride=self.process_fps)
 
         # For every process frames
         for idx, frameNumber in enumerate(tqdm(np.arange(self.start_frame, self.num_frame, self.process_fps))):
