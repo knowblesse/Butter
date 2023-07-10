@@ -6,11 +6,30 @@ from pathlib import Path
 import numpy as np
 from datetime import timedelta
 from tkinter.filedialog import askdirectory
+import argparse
+
+################################################################
+# Parse Input 
+################################################################
+parser = argparse.ArgumentParser(prog='TrainNetwork')
+parser.add_argument('--finetune', default='False', required=False)
+args = parser.parse_args()
+
+def strinput2bool(str_input):
+    if str_input in ('True', 'true', 'y', 'yes'):
+        return True
+    elif str_input in ('False', 'false', 'n', 'no'):
+        return False
+    else:
+        raise BaseException('Wrong argument input')
+
+# Convert to bool
+args.finetune = strinput2bool(args.finetune)
 
 ################################################################
 # Load Model
 ################################################################
-model_path = Path(askdirectory())
+model_path = Path('/home/ainav/VCF/butter/Models/Model_230710_154207')#Path(askdirectory())
 model = keras.models.load_model(str(model_path))
 
 history = np.loadtxt(model_path / 'history.csv', skiprows=1, delimiter=',')
@@ -35,14 +54,30 @@ additional_epochs = 10
 def scheduler(epoch, lr):
     return initial_learning_rate
 learningRateScheduler = LearningRateScheduler(scheduler)
-es = EarlyStopping(monitor='val_loss', min_delta=5e-3, patience=50, restore_best_weights=True)
+es = EarlyStopping(monitor='val_loss', min_delta=5e-3, patience=10, restore_best_weights=True)
 csv_logger = CSVLogger(model_path / 'history.csv', append=True)
+
+################################################################
+# Fine Tune (optional)
+################################################################
+if args.finetune:
+    print('Fine Tunning enabled')
+    for layer in model.layers:
+        layer.trainable = True
 
 ################################################################
 # Run
 ################################################################
 start_time = time.time()
-history = model.fit(X_conv,y,epochs=additional_epochs + last_epoch, verbose=1, initial_epoch=last_epoch, callbacks=[learningRateScheduler, es, csv_logger], validation_split=0.3, batch_size=batch_size)
+history = model.fit(
+        X_conv,
+        y,
+        epochs=additional_epochs + last_epoch, 
+        verbose=1, 
+        initial_epoch=last_epoch, 
+        callbacks=[learningRateScheduler, es, csv_logger], 
+        validation_split=0.3, 
+        batch_size=batch_size)
 
 print('Saving...')
 model.save(model_path)

@@ -49,10 +49,10 @@ new_model = createNewButterModelv1(X_conv)
 ################################################################
 # Hyperparameters
 ################################################################
-batch_size = 32
+batch_size = 64
 momentum = 0.8
 initial_learning_rate = 1e-5
-epochs = 10
+epochs = 100
 
 ################################################################
 # Make Folder
@@ -71,14 +71,14 @@ def scheduler(epoch, lr):
     """
     Callback function for adaptive learning rate change
     """
-    if epoch < 60:
+    if epoch < 10:
         return initial_learning_rate
     else:
         return lr * tf.math.exp(-0.01)
 
 learningRateScheduler = LearningRateScheduler(scheduler)
-es = EarlyStopping(monitor='val_loss', min_delta=5e-3, patience=50, restore_best_weights=True)
-csv_logger = CSVLogger(ModelPath_str + '\history.csv')
+es = EarlyStopping(monitor='val_loss', min_delta=5e-3, patience=10, restore_best_weights=True)
+csv_logger = CSVLogger(Path(ModelPath_str) / 'history.csv')
 
 ################################################################
 # Compile and run

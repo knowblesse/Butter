@@ -54,7 +54,7 @@ def loadDataset(path=None):
         y[i * 4 + 3, 0:2] = [base_network_inputsize - corr[0], base_network_inputsize - corr[1]]
 
         # Degree coding into 30 pixel away point
-        r = 30
+        r = 40
         y[i * 4 + 0, 2:4] = [
                 y[i * 4 + 0, 0] + r*np.sin(np.deg2rad(y_raw[i,2])),
                 y[i * 4 + 0, 1] + r*np.cos(np.deg2rad(y_raw[i,2]))]
@@ -79,6 +79,14 @@ def loadDataset(path=None):
     #     plt.plot([y[idx,1], y[idx,3]], [y[idx,0], y[idx,2]], LineWidth=3, color = 'r')
     #     plt.draw()
     #     plt.pause(0.1)
+
+    #################################################################
+    # Shuffle Data
+    #################################################################
+    shuffle_array = np.random.permutation(y.shape[0])
+
+    X = X[shuffle_array, :, :, :]
+    y = y[shuffle_array,:]
 
     #################################################################
     # Convert Dataset
