@@ -11,6 +11,7 @@ Process new video and return row,col coordinates with head direction
 import os
 from collections import namedtuple
 from collections import deque
+import queue
 
 import tensorflow as tf
 from tensorflow import keras
@@ -28,7 +29,7 @@ class Butter:
         model_path : pathlib.PosixPath(Path) : pre-trained model path
         process_fps : int : number of frame to process per second. 
         """
-
+        print(f'Butter : {video_path.stem}')
         if not(issubclass(type(video_path), Path)):
             raise(BaseException('Butter : video_path should be pathlib.Path object'))
         if not(issubclass(type(video_path), Path)):
@@ -155,6 +156,11 @@ class Butter:
             try:
                 image, coor = self.istream.getROIImage()
                 roi_batch.push(idx, frameNumber, image, coor)
+            except queue.Empty:
+                print('Butter : Video ended prematurely.')
+                self.output_data = self.output_data[0:int(self.istream.num_frame/self.process_fps)+1,:] # shrink size
+                self.num_frame = self.istream.num_frame
+                break
             except BlobDetectionFailureError:
                 cumerror += 1
                 print(f'Butter : Couldn\'t find the ROI in Frame {frameNumber}. Total {cumerror}')

@@ -1,3 +1,4 @@
+import queue
 from queue import Queue
 from threading import Thread
 import time
@@ -551,7 +552,10 @@ class ROI_image_stream_noblob():
         if not self.isMultithreading: # if multithreading is not used
             raise(TypeError('getROIImage() missing 1 required positional argument: \'frame_number\'\n'
                             'If you are trying to use this function as multithreading, check if you called startROIextractionThread()'))
-        frame_number, image = self.frameQ.get()
+
+
+        frame_number, image = self.frameQ.get(timeout=10)
+
 
         data_index = np.where(self.roiCoordinateData[:,0] == frame_number)[0]
         if len(data_index) ==0 :
@@ -640,6 +644,10 @@ class ROI_image_stream_noblob():
                 if self.cur_header >= self.num_frame:
                     break
                 ret, frame = self.vc.read()
+                if not ret:
+                    print('ROI_image_stream : wrong total frame number. early finishing __readVideo()\n')
+                    self.num_frame = self.cur_header - stride# frame from cur_header does not contain frame. so cur_header - stride is the last valid frame
+                    break
                 self.cur_header += 1
                 frame = cv.bitwise_and(frame, frame, mask=self.global_mask)
                 self.frameQ.put((self.cur_header-1, frame))
