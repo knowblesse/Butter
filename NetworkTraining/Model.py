@@ -33,6 +33,7 @@ def createNewButterModelv1(X_conv):
     FC = layers.Dense(500, activation='relu', name='FC_1')(FC)
     FC = layers.Dropout(0.2, name='FC_DO2')(FC)
     FC = layers.Dense(200, activation='relu', name='FC_2')(FC)
+    FC = layers.Dropout(0.1, name='FC_DO3')(FC)
     FC = layers.Dense(4, activation='linear', name='FC_3')(FC)
 
     ################################################################

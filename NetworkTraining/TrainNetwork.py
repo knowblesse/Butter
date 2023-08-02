@@ -74,7 +74,7 @@ def scheduler(epoch, lr):
     if epoch < 10:
         return initial_learning_rate
     else:
-        return lr * tf.math.exp(-0.05)
+        return lr * tf.math.exp(-0.02)
 
 learningRateScheduler = LearningRateScheduler(scheduler)
 es = EarlyStopping(monitor='val_loss', min_delta=5e-3, patience=20, restore_best_weights=True)
@@ -103,4 +103,3 @@ new_model.save(ModelPath_str)
 print(f'Saved {ModelPath_str}')
 print('Elapsed time : ' + str(timedelta(seconds=time.time() - start_time)))
 print('Best Score : ' + str(min(history.history['val_mae']))) 
-
