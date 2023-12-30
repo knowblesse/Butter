@@ -51,6 +51,7 @@ class Butter:
         except:
             raise(BaseException('Butter : Can not load model from ' + str(model_path)))
         self.model = model
+        print(f'Butter : {model_path}')
         print('Butter : Model Loaded')
 
         # Check if the model has the head detection function
